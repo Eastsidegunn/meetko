@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-meeting-watch-get"
+description = "Enables the meeting_watch_get command without any pre-configured scope."
+commands.allow = ["meeting_watch_get"]
+
+[[permission]]
+identifier = "deny-meeting-watch-get"
+description = "Denies the meeting_watch_get command without any pre-configured scope."
+commands.deny = ["meeting_watch_get"]

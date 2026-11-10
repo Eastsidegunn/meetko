@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "meetko plugin gallery index",
+  "description": "Written by tools/plugin-index/build_index.py. A convenience listing of GitHub repos tagged meetko-plugin; it is not a review or an endorsement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generated", "plugins"],
+  "properties": {
+    "generated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "plugins": { "type": "array", "items": { "$ref": "#/$defs/plugin" } }
+  },
+  "$defs": {
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "version", "description", "repo", "ref", "sha", "permissions", "runtime", "license", "stars", "updated"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}/[a-z0-9][a-z0-9_.-]{0,63}$" },
+        "name": { "type": "string" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.+-]+)?$" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "repo": { "type": "string", "description": "OWNER/REPO on github.com", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$" },
+        "ref": { "type": "string", "description": "latest release tag, else the default branch name" },
+        "sha": { "type": "string", "description": "full commit the entry was read at; installs pin this", "pattern": "^[0-9a-f]{40}$" },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["network", "audio"],
+          "properties": {
+            "network": { "type": "boolean", "description": "declared permissions.network (declared, not enforced)" },
+            "audio": { "type": "boolean", "description": "declared input.audio = full (declared, not enforced)" }
+          }
+        },
+        "runtime": { "type": "string", "description": "coarse label from run.command: python, node, shell, binary, or the program name" },
+        "license": { "type": "string" },
+        "homepage": { "type": "string", "pattern": "^https://" },
+        "stars": { "type": "integer", "minimum": 0 },
+        "updated": { "type": "string", "description": "the repo's last push time" }
+      }
+    }
+  }
+}

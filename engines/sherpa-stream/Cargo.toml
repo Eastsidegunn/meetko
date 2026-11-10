@@ -1,0 +1,18 @@
+[package]
+name = "meetko-sherpa-stream"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "meetko asr.stream engine: sherpa-onnx online transducer behind the NDJSON JSON-RPC engine seam"
+
+# Not a member of the root workspace: it links the prebuilt sherpa-onnx shared libraries
+# (vendor/, see fetch-libs.sh), which `cargo test --workspace` must not need.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+opt-level = 3

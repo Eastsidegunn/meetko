@@ -1,0 +1,23 @@
+[package]
+id = "meetko/talk-time-rs"
+version = "0.1.0"
+kind = "plugin"
+contract = "0.1"
+license = "AGPL-3.0-or-later"
+description = "화자별 발언 시간"
+
+[run]
+command = ["target/release/talk-time-rs"]
+protocol = "stdio-jsonrpc"
+
+[input]
+transcript = true
+speakers = true
+meeting = false
+audio = "none"
+
+[output]
+display = ["table"]
+
+[permissions]
+network = false

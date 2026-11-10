@@ -1,0 +1,1354 @@
+[
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 0,
+  "final": false,
+  "start_ms": 20480,
+  "text": "아",
+  "emitted_at_ms": 22200,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 21760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 1,
+  "final": false,
+  "start_ms": 20480,
+  "text": "아이건",
+  "emitted_at_ms": 22500,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 21760
+   },
+   {
+    "text": " 이건",
+    "start_ms": 22080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 2,
+  "final": false,
+  "start_ms": 20480,
+  "text": "아이건명백",
+  "emitted_at_ms": 22900,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 21760
+   },
+   {
+    "text": " 이건",
+    "start_ms": 22080
+   },
+   {
+    "text": " 명",
+    "start_ms": 22400
+   },
+   {
+    "text": "백",
+    "start_ms": 22520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 3,
+  "final": true,
+  "start_ms": 20480,
+  "text": "아이건명백",
+  "emitted_at_ms": 23800,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 21760
+   },
+   {
+    "text": " 이건",
+    "start_ms": 22080
+   },
+   {
+    "text": " 명",
+    "start_ms": 22400
+   },
+   {
+    "text": "백",
+    "start_ms": 22520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 0,
+  "final": false,
+  "start_ms": 23680,
+  "text": "이다",
+  "emitted_at_ms": 24100,
+  "units": [
+   {
+    "text": "이다",
+    "start_ms": 23720
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 1,
+  "final": true,
+  "start_ms": 23680,
+  "text": "이다",
+  "emitted_at_ms": 24800,
+  "units": [
+   {
+    "text": "이다",
+    "start_ms": 23720
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 0,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까",
+  "emitted_at_ms": 54200,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 1,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀",
+  "emitted_at_ms": 54900,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 2,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가",
+  "emitted_at_ms": 55200,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 3,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없",
+  "emitted_at_ms": 55800,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 4,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던",
+  "emitted_at_ms": 56100,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 5,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그",
+  "emitted_at_ms": 56500,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 6,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이",
+  "emitted_at_ms": 56800,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 7,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널",
+  "emitted_at_ms": 57100,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 8,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도",
+  "emitted_at_ms": 57400,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 9,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓",
+  "emitted_at_ms": 57700,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 10,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고",
+  "emitted_at_ms": 58100,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 11,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고는",
+  "emitted_at_ms": 58700,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   },
+   {
+    "text": "는",
+    "start_ms": 58440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 12,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고는바로올",
+  "emitted_at_ms": 59000,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   },
+   {
+    "text": "는",
+    "start_ms": 58440
+   },
+   {
+    "text": " 바로",
+    "start_ms": 58560
+   },
+   {
+    "text": " 올",
+    "start_ms": 58760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 13,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고는바로올렸더라",
+  "emitted_at_ms": 59300,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   },
+   {
+    "text": "는",
+    "start_ms": 58440
+   },
+   {
+    "text": " 바로",
+    "start_ms": 58560
+   },
+   {
+    "text": " 올",
+    "start_ms": 58760
+   },
+   {
+    "text": "렸",
+    "start_ms": 58880
+   },
+   {
+    "text": "더라",
+    "start_ms": 59080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 14,
+  "final": false,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고는바로올렸더라?",
+  "emitted_at_ms": 59700,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   },
+   {
+    "text": "는",
+    "start_ms": 58440
+   },
+   {
+    "text": " 바로",
+    "start_ms": 58560
+   },
+   {
+    "text": " 올",
+    "start_ms": 58760
+   },
+   {
+    "text": "렸",
+    "start_ms": 58880
+   },
+   {
+    "text": "더라",
+    "start_ms": 59080
+   },
+   {
+    "text": "?",
+    "start_ms": 59480
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 15,
+  "final": true,
+  "start_ms": 52160,
+  "text": "아그까그거좀얘기하다가진짜어이없던게그사람이널책도안해놓고는바로올렸더라?",
+  "emitted_at_ms": 60600,
+  "units": [
+   {
+    "text": " 아",
+    "start_ms": 53960
+   },
+   {
+    "text": " 그까",
+    "start_ms": 54040
+   },
+   {
+    "text": " 그거",
+    "start_ms": 54400
+   },
+   {
+    "text": " 좀",
+    "start_ms": 54520
+   },
+   {
+    "text": " 얘기",
+    "start_ms": 54760
+   },
+   {
+    "text": "하다가",
+    "start_ms": 54960
+   },
+   {
+    "text": " 진짜",
+    "start_ms": 55360
+   },
+   {
+    "text": " 어",
+    "start_ms": 55480
+   },
+   {
+    "text": "이",
+    "start_ms": 55560
+   },
+   {
+    "text": "없",
+    "start_ms": 55640
+   },
+   {
+    "text": "던",
+    "start_ms": 55920
+   },
+   {
+    "text": "게",
+    "start_ms": 56000
+   },
+   {
+    "text": " 그",
+    "start_ms": 56200
+   },
+   {
+    "text": " 사람이",
+    "start_ms": 56440
+   },
+   {
+    "text": " 널",
+    "start_ms": 56760
+   },
+   {
+    "text": " 책",
+    "start_ms": 57000
+   },
+   {
+    "text": "도",
+    "start_ms": 57160
+   },
+   {
+    "text": " 안",
+    "start_ms": 57320
+   },
+   {
+    "text": " 해",
+    "start_ms": 57440
+   },
+   {
+    "text": "놓",
+    "start_ms": 57560
+   },
+   {
+    "text": "고",
+    "start_ms": 57680
+   },
+   {
+    "text": "는",
+    "start_ms": 58440
+   },
+   {
+    "text": " 바로",
+    "start_ms": 58560
+   },
+   {
+    "text": " 올",
+    "start_ms": 58760
+   },
+   {
+    "text": "렸",
+    "start_ms": 58880
+   },
+   {
+    "text": "더라",
+    "start_ms": 59080
+   },
+   {
+    "text": "?",
+    "start_ms": 59480
+   }
+  ]
+ }
+]

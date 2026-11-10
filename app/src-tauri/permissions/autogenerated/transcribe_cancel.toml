@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-transcribe-cancel"
+description = "Enables the transcribe_cancel command without any pre-configured scope."
+commands.allow = ["transcribe_cancel"]
+
+[[permission]]
+identifier = "deny-transcribe-cancel"
+description = "Denies the transcribe_cancel command without any pre-configured scope."
+commands.deny = ["transcribe_cancel"]

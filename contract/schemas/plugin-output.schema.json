@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meetko.dev/contract/0.1/plugin-output.schema.json",
+  "title": "meetko plugin output 0.1",
+  "description": "What a plugin returns for one meeting-data input. The core is strict here: unknown fields are rejected (fail closed). Every claim points at words of the input version.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "plugin",
+    "input",
+    "items"
+  ],
+  "properties": {
+    "contract": {
+      "const": "0.1"
+    },
+    "plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "input": {
+      "description": "Echo of the version the plugin read. The core rejects output whose version_id does not match the request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version_id"
+      ],
+      "properties": {
+        "version_id": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 300,
+      "items": {
+        "$ref": "#/$defs/item"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "anchor": {
+      "description": "Inclusive word range in the input version, in words order. The core resolves it to time.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/id"
+        },
+        "to": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/anchor"
+      }
+    },
+    "item": {
+      "description": "Discriminated by `type`, so a bad item reports what is wrong inside it, not just 'matches no branch'.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "transcript_block",
+            "timeline_marker",
+            "summary_card",
+            "action_items",
+            "table"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "transcript_block"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/transcript_block"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "timeline_marker"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/timeline_marker"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "summary_card"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/summary_card"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "action_items"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/action_items"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "table"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/table"
+          }
+        }
+      ]
+    },
+    "transcript_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "anchor"
+      ],
+      "properties": {
+        "type": {
+          "const": "transcript_block"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "note": {
+          "$ref": "#/$defs/text"
+        }
+      }
+    },
+    "timeline_marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "kind",
+        "label",
+        "at"
+      ],
+      "properties": {
+        "type": {
+          "const": "timeline_marker"
+        },
+        "kind": {
+          "enum": [
+            "topic",
+            "decision",
+            "question",
+            "risk",
+            "other"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "at": {
+          "$ref": "#/$defs/anchor"
+        }
+      }
+    },
+    "summary_card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "title",
+        "points"
+      ],
+      "properties": {
+        "type": {
+          "const": "summary_card"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "evidence"
+            ],
+            "properties": {
+              "text": {
+                "$ref": "#/$defs/text"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      }
+    },
+    "action_items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "items"
+      ],
+      "properties": {
+        "type": {
+          "const": "action_items"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "evidence"
+            ],
+            "properties": {
+              "text": {
+                "$ref": "#/$defs/text"
+              },
+              "owner": {
+                "description": "speaker id of the input version",
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/id"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "due": {
+                "type": "string",
+                "format": "date"
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "columns",
+        "rows"
+      ],
+      "properties": {
+        "type": {
+          "const": "table"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "columns": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 300,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cells",
+              "evidence"
+            ],
+            "properties": {
+              "cells": {
+                "type": "array",
+                "maxItems": 12,
+                "items": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "evidence": {
+                "$ref": "#/$defs/evidence"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+ "contract": "0.1",
+ "kind": "diarization",
+ "engine": {
+  "id": "sherpa-onnx.vad",
+  "version": "2.0.1"
+ },
+ "model": {
+  "id": "silero_vad"
+ },
+ "audio_sha256": "e1791cc1f5434d281773de0eada6703f5953f8d848a2192dc42808df1c400f64",
+ "params": {
+  "threshold": 0.5,
+  "min_silence_duration": 0.5,
+  "min_speech_duration": 0.25
+ },
+ "network": false,
+ "turns": [
+  {
+   "start_ms": 518,
+   "end_ms": 7020,
+   "speaker": "speech"
+  },
+  {
+   "start_ms": 17606,
+   "end_ms": 20300,
+   "speaker": "speech"
+  },
+  {
+   "start_ms": 27686,
+   "end_ms": 31756,
+   "speaker": "speech"
+  },
+  {
+   "start_ms": 32262,
+   "end_ms": 37388,
+   "speaker": "speech"
+  },
+  {
+   "start_ms": 48102,
+   "end_ms": 52300,
+   "speaker": "speech"
+  },
+  {
+   "start_ms": 60134,
+   "end_ms": 62764,
+   "speaker": "speech"
+  }
+ ]
+}

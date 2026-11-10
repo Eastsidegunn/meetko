@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meetko.dev/contract/0.1/engine-result.schema.json",
+  "title": "meetko engine result 0.1",
+  "description": "What a front-end engine returns to the core for ONE channel. Times are milliseconds from the start of the audio the engine was given; the core maps them onto the meeting timeline. Strict: unknown fields are rejected.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/asr_batch"
+    },
+    {
+      "$ref": "#/$defs/asr_stream_event"
+    },
+    {
+      "$ref": "#/$defs/diarization"
+    }
+  ],
+  "$defs": {
+    "ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_ms",
+        "end_ms"
+      ],
+      "properties": {
+        "start_ms": {
+          "$ref": "#/$defs/ms"
+        },
+        "end_ms": {
+          "$ref": "#/$defs/ms"
+        }
+      }
+    },
+    "asr_batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "kind",
+        "engine",
+        "audio_sha256",
+        "params",
+        "word_timing",
+        "coverage",
+        "words"
+      ],
+      "properties": {
+        "contract": {
+          "const": "0.1"
+        },
+        "kind": {
+          "const": "asr.batch"
+        },
+        "engine": {
+          "$ref": "#/$defs/engine"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "audio_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "params": {
+          "type": "object"
+        },
+        "language": {
+          "type": "string"
+        },
+        "word_timing": {
+          "enum": [
+            "dtw",
+            "token",
+            "aligned",
+            "none"
+          ]
+        },
+        "network": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/span"
+          }
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start_ms",
+              "end_ms",
+              "text"
+            ],
+            "properties": {
+              "start_ms": {
+                "$ref": "#/$defs/ms"
+              },
+              "end_ms": {
+                "$ref": "#/$defs/ms"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u180e\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+$"
+              },
+              "p": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "end_estimated": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "asr_stream_event": {
+      "description": "Replace semantics: a later revision of the same segment replaces the earlier one entirely. Partials may change anything; a final never changes again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "kind",
+        "segment",
+        "revision",
+        "final",
+        "start_ms",
+        "text",
+        "units"
+      ],
+      "properties": {
+        "contract": {
+          "const": "0.1"
+        },
+        "kind": {
+          "const": "asr.stream"
+        },
+        "segment": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "final": {
+          "type": "boolean"
+        },
+        "start_ms": {
+          "$ref": "#/$defs/ms"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "emitted_at_ms": {
+          "$ref": "#/$defs/ms",
+          "description": "audio time already fed when this event was produced; latency = emitted_at_ms - unit time"
+        },
+        "units": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text",
+              "start_ms"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "pattern": "^ ?[^\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u180e\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+$",
+                "description": "a leading space marks the start of a new word"
+              },
+              "start_ms": {
+                "$ref": "#/$defs/ms"
+              },
+              "end_ms": {
+                "$ref": "#/$defs/ms"
+              }
+            }
+          }
+        }
+      }
+    },
+    "diarization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "kind",
+        "engine",
+        "audio_sha256",
+        "turns"
+      ],
+      "properties": {
+        "contract": {
+          "const": "0.1"
+        },
+        "kind": {
+          "const": "diarization"
+        },
+        "engine": {
+          "$ref": "#/$defs/engine"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "audio_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "params": {
+          "type": "object"
+        },
+        "network": {
+          "type": "boolean"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "start_ms",
+              "end_ms",
+              "speaker"
+            ],
+            "properties": {
+              "start_ms": {
+                "$ref": "#/$defs/ms"
+              },
+              "end_ms": {
+                "$ref": "#/$defs/ms"
+              },
+              "speaker": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "description": "engine-local label, meaningful only within this result",
+                "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

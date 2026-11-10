@@ -1,0 +1,19 @@
+# Batch diarization engine (role diarization), the second binary of this crate. Run by the core after
+# batch ASR, one process per transcription, serving every channel. Protocol: README in this directory.
+[package]
+id = "meetko/nemotron-diar"
+version = "0.1.0"
+kind = "engine"
+contract = "0.1"
+license = "AGPL-3.0-or-later"
+description = "NVIDIA Nemotron-3-Diarization 화자 분리"
+
+[run]
+command = "target/release/meetko-nemotron-diar"
+protocol = "stdio-jsonrpc"
+
+[role]
+provides = "diarization"
+
+[permissions]
+network = false

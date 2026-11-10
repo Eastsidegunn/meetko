@@ -1,0 +1,426 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meetko.dev/contract/0.1/meeting-data.schema.json",
+  "title": "meetko meeting data 0.1",
+  "description": "What the core hands a plugin: one immutable transcript version of one meeting. Readers must ignore fields they do not know (tolerant reader). Invariants that JSON Schema cannot express are listed in docs/rfc-0001-contract.md and checked by tests/test_invariants.py.",
+  "type": "object",
+  "required": [
+    "contract",
+    "meeting",
+    "recording",
+    "version",
+    "coverage",
+    "speakers",
+    "speaker_spans",
+    "words",
+    "turns"
+  ],
+  "properties": {
+    "contract": {
+      "const": "0.1"
+    },
+    "meeting": {
+      "type": "object",
+      "required": [
+        "id",
+        "duration_ms",
+        "channels"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/ms"
+        },
+        "language_hint": {
+          "type": "string",
+          "maxLength": 35
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "role"
+            ],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 15
+              },
+              "role": {
+                "enum": [
+                  "mic",
+                  "loopback",
+                  "other"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100,
+                "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "recording": {
+      "description": "The original audio this version was made from. Times everywhere are milliseconds on this recording's timeline.",
+      "type": "object",
+      "required": [
+        "sha256",
+        "sample_rate",
+        "duration_ms"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "sample_rate": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 192000
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/ms"
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "producers"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "live",
+            "draft",
+            "approved"
+          ]
+        },
+        "parent": {
+          "$ref": "#/$defs/id"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "producers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/producer"
+          }
+        }
+      }
+    },
+    "coverage": {
+      "description": "Audio spans this version actually transcribed, per channel. A span outside coverage is 'not transcribed', not 'silent'.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "channel",
+          "start_ms",
+          "end_ms"
+        ],
+        "properties": {
+          "channel": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_ms": {
+            "$ref": "#/$defs/ms"
+          },
+          "end_ms": {
+            "$ref": "#/$defs/ms"
+          }
+        }
+      }
+    },
+    "speakers": {
+      "description": "Speaker ids are only meaningful inside this version. The same id in another version may be another person.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "channel",
+          "basis"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "channel": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "basis": {
+            "enum": [
+              "channel",
+              "diarization",
+              "user"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+          }
+        }
+      }
+    },
+    "speaker_spans": {
+      "description": "Who was speaking when, independent of words (the diarization branch). Kept separately because word-level speaker assignment alone cannot reproduce the diarization: speech without recognised words would be lost.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "speaker",
+          "channel",
+          "start_ms",
+          "end_ms"
+        ],
+        "properties": {
+          "speaker": {
+            "$ref": "#/$defs/id"
+          },
+          "channel": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_ms": {
+            "$ref": "#/$defs/ms"
+          },
+          "end_ms": {
+            "$ref": "#/$defs/ms"
+          }
+        }
+      }
+    },
+    "words": {
+      "description": "The canonical content. Sorted by (start_ms, channel, position within the engine output).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/word"
+      }
+    },
+    "turns": {
+      "description": "Derived by the core: consecutive words of one speaker on one channel. A convenience view; words stay canonical.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "speaker",
+          "first_word",
+          "last_word",
+          "start_ms",
+          "end_ms"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "speaker": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_word": {
+            "$ref": "#/$defs/id"
+          },
+          "last_word": {
+            "$ref": "#/$defs/id"
+          },
+          "start_ms": {
+            "$ref": "#/$defs/ms"
+          },
+          "end_ms": {
+            "$ref": "#/$defs/ms"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "ms": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "word": {
+      "type": "object",
+      "required": [
+        "id",
+        "channel",
+        "start_ms",
+        "end_ms",
+        "text",
+        "speaker",
+        "speaker_status"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "channel": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "start_ms": {
+          "$ref": "#/$defs/ms"
+        },
+        "end_ms": {
+          "$ref": "#/$defs/ms"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[^\\u0000-\\u0020\\u007f-\\u00a0\\u1680\\u180e\\u2000-\\u200b\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]+$",
+          "description": "one word: no whitespace or control characters, so exports (CTM, WebVTT) cannot be split or injected"
+        },
+        "speaker": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speaker_status": {
+          "enum": [
+            "assigned",
+            "ambiguous",
+            "unassigned"
+          ]
+        },
+        "end_estimated": {
+          "type": "boolean",
+          "description": "true when the engine gave only a start time and the end was inferred"
+        },
+        "p": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "engine confidence; informational only, hallucinations come with high p"
+        }
+      }
+    },
+    "producer": {
+      "type": "object",
+      "required": [
+        "role",
+        "engine",
+        "network"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "asr",
+            "diarization",
+            "alignment",
+            "edit"
+          ]
+        },
+        "engine": {
+          "type": "object",
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          }
+        },
+        "model": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "params": {
+          "type": "object"
+        },
+        "word_timing": {
+          "enum": [
+            "dtw",
+            "token",
+            "transducer",
+            "aligned",
+            "none"
+          ]
+        },
+        "granularity": {
+          "enum": [
+            "word",
+            "token",
+            "segment"
+          ]
+        },
+        "network": {
+          "type": "boolean",
+          "description": "true when audio or text left the device for this step"
+        }
+      }
+    }
+  }
+}

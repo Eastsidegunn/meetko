@@ -1,0 +1,22 @@
+[package]
+name = "meetko-nemotron-stream"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "meetko engines on NVIDIA NeMo-Speech.cpp behind the NDJSON JSON-RPC engine seam: asr.stream (Nemotron streaming RNNT) and diarization (Nemotron-3-Diarization)"
+
+# Not a member of the root workspace: it links the prebuilt NeMo-Speech.cpp shared libraries
+# (vendor/, see fetch-libs.sh), which `cargo test --workspace` must not need.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+base64 = "0.22"
+
+[dev-dependencies]
+meetko-core = { path = "../../crates/meetko-core" } # the contract schema validator the core itself uses
+tempfile = "3"
+
+[profile.release]
+opt-level = 3

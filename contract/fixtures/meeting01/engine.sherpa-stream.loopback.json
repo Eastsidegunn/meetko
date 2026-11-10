@@ -1,0 +1,3050 @@
+[
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 0,
+  "final": false,
+  "start_ms": 0,
+  "text": "지",
+  "emitted_at_ms": 1100,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 1,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주",
+  "emitted_at_ms": 1400,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 2,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NC",
+  "emitted_at_ms": 1700,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 3,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT",
+  "emitted_at_ms": 2100,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 4,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그",
+  "emitted_at_ms": 2400,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 5,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할",
+  "emitted_at_ms": 3000,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 6,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요",
+  "emitted_at_ms": 3300,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 7,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요.",
+  "emitted_at_ms": 3700,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 8,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. AP",
+  "emitted_at_ms": 4000,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 9,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API",
+  "emitted_at_ms": 4300,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 10,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API 게이트",
+  "emitted_at_ms": 4600,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   },
+   {
+    "text": " 게",
+    "start_ms": 4160
+   },
+   {
+    "text": "이",
+    "start_ms": 4280
+   },
+   {
+    "text": "트",
+    "start_ms": 4320
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 11,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API 게이트왜",
+  "emitted_at_ms": 4900,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   },
+   {
+    "text": " 게",
+    "start_ms": 4160
+   },
+   {
+    "text": "이",
+    "start_ms": 4280
+   },
+   {
+    "text": "트",
+    "start_ms": 4320
+   },
+   {
+    "text": " 왜",
+    "start_ms": 4560
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 12,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API 게이트왜해서",
+  "emitted_at_ms": 5300,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   },
+   {
+    "text": " 게",
+    "start_ms": 4160
+   },
+   {
+    "text": "이",
+    "start_ms": 4280
+   },
+   {
+    "text": "트",
+    "start_ms": 4320
+   },
+   {
+    "text": " 왜",
+    "start_ms": 4560
+   },
+   {
+    "text": " 해서",
+    "start_ms": 4880
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 13,
+  "final": false,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API 게이트왜해서아이",
+  "emitted_at_ms": 5600,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   },
+   {
+    "text": " 게",
+    "start_ms": 4160
+   },
+   {
+    "text": "이",
+    "start_ms": 4280
+   },
+   {
+    "text": "트",
+    "start_ms": 4320
+   },
+   {
+    "text": " 왜",
+    "start_ms": 4560
+   },
+   {
+    "text": " 해서",
+    "start_ms": 4880
+   },
+   {
+    "text": " 아이",
+    "start_ms": 5160
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 0,
+  "revision": 14,
+  "final": true,
+  "start_ms": 0,
+  "text": "지난주 NCT 그할게요. API 게이트왜해서아이",
+  "emitted_at_ms": 6200,
+  "units": [
+   {
+    "text": " 지",
+    "start_ms": 720
+   },
+   {
+    "text": "난",
+    "start_ms": 960
+   },
+   {
+    "text": "주",
+    "start_ms": 1040
+   },
+   {
+    "text": " N",
+    "start_ms": 1320
+   },
+   {
+    "text": "C",
+    "start_ms": 1400
+   },
+   {
+    "text": "T",
+    "start_ms": 1600
+   },
+   {
+    "text": " 그",
+    "start_ms": 2080
+   },
+   {
+    "text": " 할",
+    "start_ms": 2720
+   },
+   {
+    "text": "게",
+    "start_ms": 2920
+   },
+   {
+    "text": "요",
+    "start_ms": 3080
+   },
+   {
+    "text": ".",
+    "start_ms": 3280
+   },
+   {
+    "text": " A",
+    "start_ms": 3560
+   },
+   {
+    "text": "P",
+    "start_ms": 3760
+   },
+   {
+    "text": "I",
+    "start_ms": 3880
+   },
+   {
+    "text": " 게",
+    "start_ms": 4160
+   },
+   {
+    "text": "이",
+    "start_ms": 4280
+   },
+   {
+    "text": "트",
+    "start_ms": 4320
+   },
+   {
+    "text": " 왜",
+    "start_ms": 4560
+   },
+   {
+    "text": " 해서",
+    "start_ms": 4880
+   },
+   {
+    "text": " 아이",
+    "start_ms": 5160
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 0,
+  "final": false,
+  "start_ms": 6080,
+  "text": "연습으로",
+  "emitted_at_ms": 6500,
+  "units": [
+   {
+    "text": " 연습",
+    "start_ms": 6080
+   },
+   {
+    "text": "으로",
+    "start_ms": 6280
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 1,
+  "final": false,
+  "start_ms": 6080,
+  "text": "연습으로났",
+  "emitted_at_ms": 6900,
+  "units": [
+   {
+    "text": " 연습",
+    "start_ms": 6080
+   },
+   {
+    "text": "으로",
+    "start_ms": 6280
+   },
+   {
+    "text": " 났",
+    "start_ms": 6520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 2,
+  "final": false,
+  "start_ms": 6080,
+  "text": "연습으로났습니다",
+  "emitted_at_ms": 7200,
+  "units": [
+   {
+    "text": " 연습",
+    "start_ms": 6080
+   },
+   {
+    "text": "으로",
+    "start_ms": 6280
+   },
+   {
+    "text": " 났",
+    "start_ms": 6520
+   },
+   {
+    "text": "습니다",
+    "start_ms": 6760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 1,
+  "revision": 3,
+  "final": true,
+  "start_ms": 6080,
+  "text": "연습으로났습니다",
+  "emitted_at_ms": 7800,
+  "units": [
+   {
+    "text": " 연습",
+    "start_ms": 6080
+   },
+   {
+    "text": "으로",
+    "start_ms": 6280
+   },
+   {
+    "text": " 났",
+    "start_ms": 6520
+   },
+   {
+    "text": "습니다",
+    "start_ms": 6760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 0,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까",
+  "emitted_at_ms": 18100,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 1,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션",
+  "emitted_at_ms": 18700,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 2,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션설",
+  "emitted_at_ms": 19300,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 3,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션설정",
+  "emitted_at_ms": 19700,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   },
+   {
+    "text": "정",
+    "start_ms": 19240
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 4,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션설정문제",
+  "emitted_at_ms": 20000,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   },
+   {
+    "text": "정",
+    "start_ms": 19240
+   },
+   {
+    "text": " 문제",
+    "start_ms": 19520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 5,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션설정문제아니었어",
+  "emitted_at_ms": 20300,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   },
+   {
+    "text": "정",
+    "start_ms": 19240
+   },
+   {
+    "text": " 문제",
+    "start_ms": 19520
+   },
+   {
+    "text": " 아니었어",
+    "start_ms": 19880
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 6,
+  "final": false,
+  "start_ms": 15360,
+  "text": "그니까그건액션설정문제아니었어요?",
+  "emitted_at_ms": 20600,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   },
+   {
+    "text": "정",
+    "start_ms": 19240
+   },
+   {
+    "text": " 문제",
+    "start_ms": 19520
+   },
+   {
+    "text": " 아니었어",
+    "start_ms": 19880
+   },
+   {
+    "text": "요",
+    "start_ms": 20320
+   },
+   {
+    "text": "?",
+    "start_ms": 20440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 2,
+  "revision": 7,
+  "final": true,
+  "start_ms": 15360,
+  "text": "그니까그건액션설정문제아니었어요?",
+  "emitted_at_ms": 21600,
+  "units": [
+   {
+    "text": ".",
+    "start_ms": 17760
+   },
+   {
+    "text": " 그니까",
+    "start_ms": 17800
+   },
+   {
+    "text": " 그건",
+    "start_ms": 18240
+   },
+   {
+    "text": " 액",
+    "start_ms": 18400
+   },
+   {
+    "text": "션",
+    "start_ms": 18520
+   },
+   {
+    "text": " 설",
+    "start_ms": 19080
+   },
+   {
+    "text": "정",
+    "start_ms": 19240
+   },
+   {
+    "text": " 문제",
+    "start_ms": 19520
+   },
+   {
+    "text": " 아니었어",
+    "start_ms": 19880
+   },
+   {
+    "text": "요",
+    "start_ms": 20320
+   },
+   {
+    "text": "?",
+    "start_ms": 20440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 0,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러",
+  "emitted_at_ms": 29900,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 1,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지",
+  "emitted_at_ms": 30200,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 2,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지?",
+  "emitted_at_ms": 30500,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 3,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고",
+  "emitted_at_ms": 31200,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 4,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요",
+  "emitted_at_ms": 31800,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 5,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요.",
+  "emitted_at_ms": 32100,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 6,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요",
+  "emitted_at_ms": 33100,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 7,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요.",
+  "emitted_at_ms": 33700,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 8,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서",
+  "emitted_at_ms": 34100,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 9,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프",
+  "emitted_at_ms": 34700,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 10,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티",
+  "emitted_at_ms": 35000,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 11,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의",
+  "emitted_at_ms": 35300,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 12,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의로드",
+  "emitted_at_ms": 35700,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   },
+   {
+    "text": " 로",
+    "start_ms": 35280
+   },
+   {
+    "text": "드",
+    "start_ms": 35320
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 13,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의로드같이",
+  "emitted_at_ms": 36600,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   },
+   {
+    "text": " 로",
+    "start_ms": 35280
+   },
+   {
+    "text": "드",
+    "start_ms": 35320
+   },
+   {
+    "text": " 같이",
+    "start_ms": 36200
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 14,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의로드같이골랐",
+  "emitted_at_ms": 36900,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   },
+   {
+    "text": " 로",
+    "start_ms": 35280
+   },
+   {
+    "text": "드",
+    "start_ms": 35320
+   },
+   {
+    "text": " 같이",
+    "start_ms": 36200
+   },
+   {
+    "text": " 골",
+    "start_ms": 36600
+   },
+   {
+    "text": "랐",
+    "start_ms": 36680
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 15,
+  "final": false,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의로드같이골랐거리",
+  "emitted_at_ms": 37300,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   },
+   {
+    "text": " 로",
+    "start_ms": 35280
+   },
+   {
+    "text": "드",
+    "start_ms": 35320
+   },
+   {
+    "text": " 같이",
+    "start_ms": 36200
+   },
+   {
+    "text": " 골",
+    "start_ms": 36600
+   },
+   {
+    "text": "랐",
+    "start_ms": 36680
+   },
+   {
+    "text": "거리",
+    "start_ms": 36880
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 3,
+  "revision": 16,
+  "final": true,
+  "start_ms": 29120,
+  "text": "이러지? 넘었다고들었어요. 맞아요. 그래서이번스프링티의로드같이골랐거리",
+  "emitted_at_ms": 37900,
+  "units": [
+   {
+    "text": " 이러",
+    "start_ms": 29520
+   },
+   {
+    "text": "지",
+    "start_ms": 29760
+   },
+   {
+    "text": "?",
+    "start_ms": 30080
+   },
+   {
+    "text": " 넘",
+    "start_ms": 30720
+   },
+   {
+    "text": "었다",
+    "start_ms": 30800
+   },
+   {
+    "text": "고",
+    "start_ms": 31000
+   },
+   {
+    "text": " 들었어",
+    "start_ms": 31360
+   },
+   {
+    "text": "요",
+    "start_ms": 31640
+   },
+   {
+    "text": ".",
+    "start_ms": 31960
+   },
+   {
+    "text": " 맞아",
+    "start_ms": 32640
+   },
+   {
+    "text": "요",
+    "start_ms": 32920
+   },
+   {
+    "text": ".",
+    "start_ms": 33520
+   },
+   {
+    "text": " 그래서",
+    "start_ms": 33600
+   },
+   {
+    "text": " 이번",
+    "start_ms": 34240
+   },
+   {
+    "text": " 스",
+    "start_ms": 34400
+   },
+   {
+    "text": "프",
+    "start_ms": 34480
+   },
+   {
+    "text": "링",
+    "start_ms": 34640
+   },
+   {
+    "text": "티",
+    "start_ms": 34800
+   },
+   {
+    "text": "의",
+    "start_ms": 34920
+   },
+   {
+    "text": " 로",
+    "start_ms": 35280
+   },
+   {
+    "text": "드",
+    "start_ms": 35320
+   },
+   {
+    "text": " 같이",
+    "start_ms": 36200
+   },
+   {
+    "text": " 골",
+    "start_ms": 36600
+   },
+   {
+    "text": "랐",
+    "start_ms": 36680
+   },
+   {
+    "text": "거리",
+    "start_ms": 36880
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 0,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정",
+  "emitted_at_ms": 48800,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 1,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로",
+  "emitted_at_ms": 49400,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 2,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남",
+  "emitted_at_ms": 49700,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 3,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고",
+  "emitted_at_ms": 50100,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 4,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액",
+  "emitted_at_ms": 50400,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 5,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션",
+  "emitted_at_ms": 50700,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 6,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키",
+  "emitted_at_ms": 51000,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 7,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키문제가",
+  "emitted_at_ms": 51700,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   },
+   {
+    "text": " 문제가",
+    "start_ms": 51200
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 8,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키문제가감당",
+  "emitted_at_ms": 52000,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   },
+   {
+    "text": " 문제가",
+    "start_ms": 51200
+   },
+   {
+    "text": " 감",
+    "start_ms": 51560
+   },
+   {
+    "text": "당",
+    "start_ms": 51680
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 9,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키문제가감당할게",
+  "emitted_at_ms": 52300,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   },
+   {
+    "text": " 문제가",
+    "start_ms": 51200
+   },
+   {
+    "text": " 감",
+    "start_ms": 51560
+   },
+   {
+    "text": "당",
+    "start_ms": 51680
+   },
+   {
+    "text": "할",
+    "start_ms": 51880
+   },
+   {
+    "text": "게",
+    "start_ms": 52040
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 10,
+  "final": false,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키문제가감당할게요.",
+  "emitted_at_ms": 52600,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   },
+   {
+    "text": " 문제가",
+    "start_ms": 51200
+   },
+   {
+    "text": " 감",
+    "start_ms": 51560
+   },
+   {
+    "text": "당",
+    "start_ms": 51680
+   },
+   {
+    "text": "할",
+    "start_ms": 51880
+   },
+   {
+    "text": "게",
+    "start_ms": 52040
+   },
+   {
+    "text": "요",
+    "start_ms": 52280
+   },
+   {
+    "text": ".",
+    "start_ms": 52440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 4,
+  "revision": 11,
+  "final": true,
+  "start_ms": 48000,
+  "text": "결정으로남기고액션나이키문제가감당할게요.",
+  "emitted_at_ms": 53600,
+  "units": [
+   {
+    "text": " 결정",
+    "start_ms": 48480
+   },
+   {
+    "text": "으로",
+    "start_ms": 49040
+   },
+   {
+    "text": " 남",
+    "start_ms": 49400
+   },
+   {
+    "text": "기",
+    "start_ms": 49600
+   },
+   {
+    "text": "고",
+    "start_ms": 49800
+   },
+   {
+    "text": " 액",
+    "start_ms": 50160
+   },
+   {
+    "text": "션",
+    "start_ms": 50320
+   },
+   {
+    "text": " 나이",
+    "start_ms": 50600
+   },
+   {
+    "text": "키",
+    "start_ms": 50760
+   },
+   {
+    "text": " 문제가",
+    "start_ms": 51200
+   },
+   {
+    "text": " 감",
+    "start_ms": 51560
+   },
+   {
+    "text": "당",
+    "start_ms": 51680
+   },
+   {
+    "text": "할",
+    "start_ms": 51880
+   },
+   {
+    "text": "게",
+    "start_ms": 52040
+   },
+   {
+    "text": "요",
+    "start_ms": 52280
+   },
+   {
+    "text": ".",
+    "start_ms": 52440
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 5,
+  "revision": 0,
+  "final": false,
+  "start_ms": 58560,
+  "text": "올라오",
+  "emitted_at_ms": 61300,
+  "units": [
+   {
+    "text": " 올라오",
+    "start_ms": 60800
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 5,
+  "revision": 1,
+  "final": false,
+  "start_ms": 58560,
+  "text": "올라오면",
+  "emitted_at_ms": 61600,
+  "units": [
+   {
+    "text": " 올라오",
+    "start_ms": 60800
+   },
+   {
+    "text": "면",
+    "start_ms": 61160
+   }
+  ]
+ },
+ {
+  "contract": "0.1",
+  "kind": "asr.stream",
+  "segment": 5,
+  "revision": 2,
+  "final": true,
+  "start_ms": 58560,
+  "text": "올라오면",
+  "emitted_at_ms": 62200,
+  "units": [
+   {
+    "text": " 올라오",
+    "start_ms": 60800
+   },
+   {
+    "text": "면",
+    "start_ms": 61160
+   }
+  ]
+ }
+]

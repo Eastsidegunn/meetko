@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>회의 녹음을 위해 마이크를 사용합니다. 오디오는 이 기기에만 저장됩니다.</string>
+  <!-- System audio is captured through ScreenCaptureKit, which macOS files under "Screen & System
+       Audio Recording". No Info.plist key is known to be required for that; these two are declared
+       so any prompt that does read a description says what really happens (unverified). -->
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>상대방 목소리(시스템 소리)를 녹음하기 위해 화면 및 시스템 오디오 녹음 권한을 사용합니다. 화면 내용은 저장하지 않으며, 오디오는 이 기기에만 저장됩니다.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>회의 상대의 시스템 소리를 녹음합니다. 오디오는 이 기기에만 저장됩니다.</string>
+</dict>
+</plist>

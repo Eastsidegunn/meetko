@@ -1,0 +1,13 @@
+# Streaming models the engine is known to load, pinned per file. The core refuses a model
+# directory whose files do not match one entry (docs/plugin-security.md: a model is parsed by
+# native code), unless MEETKO_STREAM_MODEL_UNPINNED=1 is set for development.
+# The same four files the engine reads: see MODEL_FILES in crates/meetko-core/src/live.rs.
+
+[[model]]
+id = "sherpa-onnx-streaming-zipformer-korean-2024-06-16"
+
+[model.files]
+"decoder-epoch-99-avg-1.onnx" = "b29cfb4575141e50a30a22b2c4579934f3d4f45b83c9c8c08c3aef5a3fa7abfc"
+"encoder-epoch-99-avg-1.int8.onnx" = "8d0b1aa24fbedd4e3948564ab7facd151b8ce9b0c48fc987c541de2de3af5697"
+"joiner-epoch-99-avg-1.int8.onnx" = "128b80a66a1f718488af8560f9d15895109b99ff3e573f0a0130e03774ef1ced"
+"tokens.txt" = "016bdf0965029263b7ad01b742366ee542ef0bef38261510e8176ff6f2e9e668"

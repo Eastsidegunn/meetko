@@ -1,0 +1,22 @@
+# Streaming models this engine is known to load, pinned per file (same rules as
+# ../sherpa-stream/models.toml; the core reads both). The key is the file name inside the model
+# directory: the Hugging Face file nemotron-3.5-asr-streaming-0.6b.q8_0.gguf is kept as
+# model.q8_0.gguf. Weights: nvidia/nemotron-3.5-asr-streaming-0.6b, license OpenMDW-1.1.
+
+[[model]]
+id = "nemotron-3.5-asr-streaming-0.6b-q8_0"
+
+[model.files]
+"model.q8_0.gguf" = "3fc991d3badad7277c11030a7519832cddaf2057aafed6d4b25147e953a070b1"
+
+# The diarization model of the second binary, meetko-nemotron-diar (role "diarization"; the core
+# looks for this role in MEETKO_DIAR_MODEL). The file keeps its Hugging Face name: it is NVIDIA's
+# own published q8_0 GGUF, Nemotron-3-Diarization.q8_0.gguf in nvidia/Nemotron-3-Diarization at
+# revision f667ed73aee57d40cc39428eb768b4fd87a0a29e, license OpenMDW-1.1. Up to 8 speakers.
+
+[[model]]
+id = "nemotron-3-diarization-q8_0"
+role = "diarization"
+
+[model.files]
+"Nemotron-3-Diarization.q8_0.gguf" = "08456d9e22cd9a323c0364d98375f3746d6e68507ebb705cd46438c534c7a3a1"

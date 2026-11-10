@@ -1,0 +1,115 @@
+/* Primitives: reset, text, buttons, rows, links, popover, focus. Numbers come from tokens (see tokens.json). */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--c-canvas);
+  color: var(--c-text);
+  font: var(--fw-ui) var(--fs-ui)/var(--lh-ui) var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  word-break: keep-all;          /* Apple ko-kr measured keep-all */
+  overflow-wrap: anywhere;       /* 200-char unbroken strings must wrap, not overflow */
+}
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; margin: 0; cursor: default; text-align: inherit; }
+h1, h2, h3, h4, p, ul, ol, dl, dd { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+a { color: inherit; text-decoration: none; }
+svg { display: block; flex: none; }
+[hidden] { display: none !important; }
+::selection { background: color-mix(in srgb, var(--c-accent) 28%, transparent); }
+
+.t-caption  { font-size: var(--fs-caption);  line-height: var(--lh-caption); }
+.t-footnote { font-size: var(--fs-footnote); line-height: var(--lh-footnote); }
+.t-callout  { font-size: var(--fs-callout);  line-height: var(--lh-callout); }
+.t-title3   { font-size: var(--fs-title3);   line-height: var(--lh-title3);  font-weight: var(--fw-title3); letter-spacing: var(--ls-title); }
+.t-title1   { font-size: var(--fs-title1);   line-height: var(--lh-title1);  font-weight: var(--fw-title1); letter-spacing: var(--ls-title); }
+.t-strong   { font-weight: var(--fw-strong); }
+.c-2 { color: var(--c-text-2); }
+.c-3 { color: var(--c-text-3); }
+.mono { font-family: var(--font-mono); font-size: 12px; line-height: 18px; letter-spacing: 0; }
+.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- focus: M3. 2px solid, follows radius, no transition. Rows use highlight instead (below). ---------- */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--c-ring); outline-offset: 3px; }
+
+/* ---------- buttons: M1 hover = wash + text brighten, 100ms; primary 160ms ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px; border-radius: var(--r-md);
+  color: var(--c-text-2); background-color: transparent; white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-fast), color var(--dur-fast) var(--ease-fast);
+}
+.btn:hover { background-color: var(--c-wash-hover); color: var(--c-text); }
+.btn:active { background-color: var(--c-wash-pressed); color: var(--c-text); transition-duration: 0ms; }
+.btn[aria-pressed="true"], .btn[aria-expanded="true"] { background-color: var(--c-wash-selected); color: var(--c-text); }
+.btn:disabled, .btn[aria-disabled="true"] { color: var(--c-text-3); opacity: .55; pointer-events: none; }
+.btn-icon { width: 28px; padding: 0; justify-content: center; }
+.btn-primary {
+  background-color: var(--c-ink); color: var(--c-on-ink); font-weight: var(--fw-medium); border-radius: var(--r-pill); padding: 0 14px;
+  transition: background-color var(--dur-base) var(--ease-fast);
+}
+.btn-primary:hover { background-color: var(--c-ink-hover); color: var(--c-on-ink); }
+.btn-primary:active { background-color: var(--c-ink-hover); color: var(--c-on-ink); opacity: .88; transition-duration: 0ms; }
+.btn-primary:disabled { background-color: var(--c-wash-selected); color: var(--c-text-3); opacity: 1; }
+.btn-danger { color: var(--c-danger); }
+.btn-danger:hover { color: var(--c-danger); background-color: var(--c-danger-wash); }
+.btn-lg { height: 36px; padding: 0 16px; font-size: var(--fs-callout); }
+
+.seg { display: inline-flex; padding: 2px; gap: 2px; background: var(--c-seg); border-radius: var(--r-md); }
+.seg .btn { height: 24px; padding: 0 10px; border-radius: 6px; font-size: 13px; font-weight: var(--fw-medium); }
+.seg .btn[aria-checked="true"], .seg .btn[aria-selected="true"] { background-color: var(--c-raised); color: var(--c-text); box-shadow: var(--sh-pill); }
+.seg .btn[aria-checked="true"]:hover, .seg .btn[aria-selected="true"]:hover { background-color: var(--c-canvas); }
+
+/* ---------- dense rows: instant hover (M1 sidebar rows 0s), selected = 2x ---------- */
+.row { display: block; border-radius: var(--r-md); }
+.row:hover { background-color: var(--c-wash-row); }
+.row[aria-selected="true"], .row[aria-current="page"] { background-color: var(--c-wash-selected); }
+.row:focus-visible { outline: none; background-color: var(--c-accent-solid); color: var(--c-on-accent); }
+.row:focus-visible * * { color: inherit !important; }
+.row:focus-visible > svg { color: inherit !important; }
+.row[aria-disabled="true"] { color: var(--c-text-3); pointer-events: none; }
+
+/* ---------- links: M4. colour alpha .8 -> 1 over 320ms, underline instant. For rare prose links only. ---------- */
+.link {
+  color: color-mix(in srgb, var(--c-accent-text) 92%, transparent);
+  transition: color var(--dur-link) var(--ease-link);
+  text-decoration: none; cursor: pointer; background: none; border: 0; padding: 0; text-align: inherit;
+}
+.link:hover { color: var(--c-accent-text); text-decoration: underline; text-underline-offset: 2px; }
+/* evidence links are touched constantly: use the 100ms tier */
+.link-fast { transition-duration: var(--dur-fast); transition-timing-function: var(--ease-fast); }
+
+/* ---------- popover: M2. 180ms ease, opacity 0->1 + scale .98->1, origin at trigger ---------- */
+@keyframes scaleIn  { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
+@keyframes scaleOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(.98); } }
+.pop {
+  position: absolute; z-index: 30; background: var(--c-raised); border-radius: var(--r-pop);
+  box-shadow: var(--c-shadow-pop); animation: scaleIn var(--dur-pop) var(--ease-pop) both; transform-origin: top left;
+}
+.pop.closing { animation: scaleOut var(--dur-pop) var(--ease-pop) both; }
+.scrim { position: fixed; inset: 0; z-index: 40; background: var(--c-scrim); display: grid; place-items: center; animation: fadeIn var(--dur-pop) var(--ease-pop) both; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.scrim.closing { animation: fadeOut var(--dur-pop) var(--ease-pop) both; }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pop, .scrim { animation-duration: 0ms; }
+}
+
+/* ---------- small pieces ---------- */
+.hr { height: 1px; background: var(--c-hairline-soft); border: 0; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; line-height: 16px; color: var(--c-text-3); white-space: nowrap; }
+.tag-warn { color: var(--c-warning); }
+.tag-danger { color: var(--c-danger); }
+.tag-ok { color: var(--c-success); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--c-hairline); border-top-color: var(--c-accent-text); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+.progress { height: 4px; border-radius: 2px; background: var(--c-wash-selected); overflow: hidden; }
+.progress > i { display: block; height: 100%; background: var(--c-ink); border-radius: 2px; }

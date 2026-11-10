@@ -1,0 +1,20 @@
+# Streaming ASR engine (role asr.stream). Run by the core while a capture is recording;
+# one process per channel. Protocol: docs/rfc-0001-contract.md, README in this directory.
+[package]
+id = "meetko/nemotron-stream"
+version = "0.1.0"
+kind = "engine"
+contract = "0.1"
+license = "AGPL-3.0-or-later"
+description = "NVIDIA Nemotron 스트리밍 RNNT 실시간 자막"
+
+[run]
+command = "target/release/meetko-nemotron-stream"
+protocol = "stdio-jsonrpc"
+
+[role]
+provides = "asr.stream"
+word_timestamps = "native"
+
+[permissions]
+network = false

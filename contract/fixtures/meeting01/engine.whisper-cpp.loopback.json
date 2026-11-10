@@ -1,0 +1,329 @@
+{
+ "contract": "0.1",
+ "kind": "asr.batch",
+ "engine": {
+  "id": "whisper.cpp",
+  "version": "1.9.5"
+ },
+ "model": {
+  "id": "ggml-large-v3-turbo",
+  "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+ },
+ "audio_sha256": "e1791cc1f5434d281773de0eada6703f5953f8d848a2192dc42808df1c400f64",
+ "params": {
+  "language": "ko",
+  "max_context": 0,
+  "dtw": "large.v3.turbo",
+  "flash_attn": false,
+  "temperature": 0.0,
+  "temperature_inc": 0.2,
+  "entropy_thold": 2.4,
+  "logprob_thold": -1.0,
+  "no_speech_thold": 0.6
+ },
+ "language": "ko",
+ "word_timing": "dtw",
+ "network": false,
+ "coverage": [
+  {
+   "start_ms": 0,
+   "end_ms": 62180
+  }
+ ],
+ "words": [
+  {
+   "start_ms": 700,
+   "end_ms": 1180,
+   "text": "지난주",
+   "p": 0.9897,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 1180,
+   "end_ms": 1840,
+   "text": "인시던트",
+   "p": 0.9804,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 1840,
+   "end_ms": 2820,
+   "text": "회고부터",
+   "p": 0.9803,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 2820,
+   "end_ms": 2820,
+   "text": "할게요.",
+   "p": 0.9609,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 3660,
+   "end_ms": 3980,
+   "text": "API",
+   "p": 0.95,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 3980,
+   "end_ms": 5020,
+   "text": "게이트웨이에서",
+   "p": 0.9211,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 5020,
+   "end_ms": 5660,
+   "text": "타임아웃",
+   "p": 0.892,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 5660,
+   "end_ms": 6340,
+   "text": "2연속으로",
+   "p": 0.5826,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 6340,
+   "end_ms": 6740,
+   "text": "났습니다.",
+   "p": 0.8683,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 17760,
+   "end_ms": 18080,
+   "text": "그거",
+   "p": 0.9891,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 18080,
+   "end_ms": 18680,
+   "text": "커넥션",
+   "p": 0.9947,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 18680,
+   "end_ms": 18900,
+   "text": "풀",
+   "p": 0.9711,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 18900,
+   "end_ms": 19460,
+   "text": "설정",
+   "p": 0.9855,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 19460,
+   "end_ms": 19700,
+   "text": "문제",
+   "p": 0.9997,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 19700,
+   "end_ms": 20100,
+   "text": "아니었어요?",
+   "p": 0.9728,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 27820,
+   "end_ms": 28020,
+   "text": "풀",
+   "p": 0.9783,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 28020,
+   "end_ms": 28560,
+   "text": "사이즈를",
+   "p": 0.9807,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 28560,
+   "end_ms": 29040,
+   "text": "늘리고",
+   "p": 0.9988,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 29040,
+   "end_ms": 29460,
+   "text": "리트리",
+   "p": 0.9281,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 29460,
+   "end_ms": 29960,
+   "text": "로직에",
+   "p": 0.9514,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 29960,
+   "end_ms": 30520,
+   "text": "백오프를",
+   "p": 0.33,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 30520,
+   "end_ms": 31120,
+   "text": "넣었다고",
+   "p": 0.9953,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 31120,
+   "end_ms": 32620,
+   "text": "들었어요.",
+   "p": 0.9897,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 32620,
+   "end_ms": 33480,
+   "text": "맞아요.",
+   "p": 0.5446,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 33480,
+   "end_ms": 33980,
+   "text": "그래서",
+   "p": 0.9868,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 33980,
+   "end_ms": 34240,
+   "text": "이번",
+   "p": 0.9719,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 34240,
+   "end_ms": 35020,
+   "text": "스프린트의",
+   "p": 0.4849,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 35020,
+   "end_ms": 35340,
+   "text": "로드",
+   "p": 0.9921,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 35340,
+   "end_ms": 36180,
+   "text": "테스트를",
+   "p": 0.9988,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 36180,
+   "end_ms": 36460,
+   "text": "같이",
+   "p": 0.9995,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 36460,
+   "end_ms": 37240,
+   "text": "돌려보려고요.",
+   "p": 0.9302,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 48240,
+   "end_ms": 48620,
+   "text": "결정",
+   "p": 0.8511,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 48620,
+   "end_ms": 49220,
+   "text": "사항으로",
+   "p": 0.9259,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 49220,
+   "end_ms": 50040,
+   "text": "남기고",
+   "p": 0.9994,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 50040,
+   "end_ms": 50500,
+   "text": "액션",
+   "p": 0.8837,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 50500,
+   "end_ms": 51160,
+   "text": "아이템은",
+   "p": 0.9817,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 51160,
+   "end_ms": 51420,
+   "text": "제가",
+   "p": 0.9998,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 51420,
+   "end_ms": 52080,
+   "text": "담당할게요.",
+   "p": 0.9956,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 60340,
+   "end_ms": 60660,
+   "text": "PR",
+   "p": 0.6697,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 60660,
+   "end_ms": 61320,
+   "text": "올라오면",
+   "p": 0.9914,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 61320,
+   "end_ms": 61580,
+   "text": "제가",
+   "p": 0.8979,
+   "end_estimated": true
+  },
+  {
+   "start_ms": 61580,
+   "end_ms": 62180,
+   "text": "리뷰하겠습니다.",
+   "p": 0.6798,
+   "end_estimated": true
+  }
+ ]
+}

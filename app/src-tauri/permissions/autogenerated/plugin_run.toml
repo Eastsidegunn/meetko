@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-plugin-run"
+description = "Enables the plugin_run command without any pre-configured scope."
+commands.allow = ["plugin_run"]
+
+[[permission]]
+identifier = "deny-plugin-run"
+description = "Denies the plugin_run command without any pre-configured scope."
+commands.deny = ["plugin_run"]

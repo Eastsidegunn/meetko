@@ -1,0 +1,43 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "main window: own commands and event listening only; no fs, shell, dialog, window or path APIs from JS",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-status",
+    "allow-list-meetings",
+    "allow-get-meeting",
+    "allow-get-version",
+    "allow-resolve-anchor",
+    "allow-approve",
+    "allow-transcribe-start",
+    "allow-live-draft-start",
+    "allow-transcribe-cancel",
+    "allow-capture-start",
+    "allow-capture-stop",
+    "allow-list-plugins",
+    "allow-plugin-pick",
+    "allow-plugin-add",
+    "allow-plugin-run",
+    "allow-list-results",
+    "allow-list-stale",
+    "allow-gallery-list",
+    "allow-gallery-preview",
+    "allow-gallery-install",
+    "allow-export-version",
+    "allow-export-save",
+    "allow-meeting-watch-get",
+    "allow-meeting-watch-set",
+    "allow-meeting-prompt-answer",
+    "allow-search",
+    "allow-model-setup",
+    "allow-model-download",
+    "allow-model-pick",
+    "allow-model-cancel",
+    "allow-setup-card-dismiss"
+  ]
+}

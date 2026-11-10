@@ -1,0 +1,151 @@
+/* Theme token layer. Loaded after tokens.css and overriding only the values below.
+   Kept from tokens.css: reading size/leading (17/27), keep-all, focus ring rule, 4.5:1 text contrast. */
+:root {
+  /* shape: rows 8, cards 12, composer/dialog 16, window 22 */
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pop: 16px;
+  --r-panel: 12px;
+  /* type: weight 500 is the UI voice, titles are medium with -1% tracking */
+  --fw-strong: 560;
+  --fw-medium: 500;
+  --fw-ui-strong: 560;
+  --fw-title1: 500;
+  --fw-title2: 500;
+  --fw-title3: 500;
+  --ls-title: -0.012em;
+  --fs-title1: 30px;
+  --lh-title1: 36px;
+  --fs-label: 13px;
+  --lh-label: 19px;
+  /* motion: one 150ms standard curve everywhere (cubic-bezier(.4,0,.2,1), 150ms) */
+  --dur-fast: 150ms;
+  --dur-base: 150ms;
+  --dur-pop: 150ms;
+  --dur-link: 150ms;
+  --ease-fast: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-pop: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-link: cubic-bezier(0.4, 0, 0.2, 1);
+  --w-sidebar: 208px;
+  /* light: cool paper. shell = the window frame the white panel sits in */
+  --c-canvas: #ffffff;
+  --c-chrome: #f4f6f8;
+  --c-shell: #f1f4f7;
+  --c-shell-glow: rgba(56, 189, 248, 0.085);
+  --c-raised: #ffffff;
+  --c-text: #090b0c;
+  --c-text-2: #50565b;
+  --c-text-3: #646b71;
+  --c-hairline: #dde1e6;
+  --c-hairline-soft: rgba(9, 11, 12, 0.08);
+  --c-ring-hair: rgba(9, 11, 12, 0.14);
+  --c-accent: #0284c7;
+  --c-accent-hover: #0369a1;
+  --c-accent-text: #0369a1;
+  --c-ring: #0284c7;
+  --c-accent-solid: #0369a1;
+  --c-on-accent: #ffffff;
+  --c-ink: #090b0c;
+  --c-ink-hover: #2a2e31;
+  --c-on-ink: #fafafa;
+  --c-wash-hover: rgba(9, 11, 12, 0.055);
+  --c-wash-row: rgba(9, 11, 12, 0.04);
+  --c-wash-selected: rgba(9, 11, 12, 0.07);
+  --c-wash-pressed: rgba(9, 11, 12, 0.10);
+  --c-seg: rgba(9, 11, 12, 0.06);
+  --c-playhead-word: rgba(2, 132, 199, 0.16);
+  --c-playhead-turn: #0284c7;
+  --c-danger: #d6001a;
+  --c-danger-wash: rgba(228, 0, 20, 0.07);
+  --c-gap: rgba(9, 11, 12, 0.10);
+  --c-scrim: rgba(9, 11, 12, 0.30);
+  --sh-ring: 0 0 0 0.5px var(--c-ring-hair);
+  --sh-card: 0 0 0 0.5px var(--c-ring-hair), 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+  --sh-pill: 0 0 0 0.5px var(--c-ring-hair), 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --c-shadow-pop: 0 0 0 0.5px var(--c-ring-hair), 0 10px 15px -3px rgba(0, 0, 0, 0.09), 0 4px 6px -4px rgba(0, 0, 0, 0.09);
+  --sh-window: 0 0 0 0.5px var(--c-ring-hair), 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.12);
+  --m-question: #0369a1;
+  --m-topic: #646b71;
+  --m-other: #646b71;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-canvas: #15181a;
+    --c-chrome: #1b1f22;
+    --c-shell: #0f1214;
+    --c-shell-glow: rgba(56, 189, 248, 0.07);
+    --c-raised: #1f2427;
+    --c-text: #f1f3f4;
+    --c-text-2: #a9b0b5;
+    --c-text-3: #8d959b;
+    --c-hairline: #30363a;
+    --c-hairline-soft: rgba(255, 255, 255, 0.08);
+    --c-ring-hair: rgba(255, 255, 255, 0.14);
+    --c-accent: #0284c7;
+    --c-accent-hover: #0ea5e9;
+    --c-accent-text: #38bdf8;
+    --c-ring: #38bdf8;
+    --c-accent-solid: #0369a1;
+    --c-ink: #f1f3f4;
+    --c-ink-hover: #ffffff;
+    --c-on-ink: #090b0c;
+    --c-wash-hover: rgba(255, 255, 255, 0.08);
+    --c-wash-row: rgba(255, 255, 255, 0.045);
+    --c-wash-selected: rgba(255, 255, 255, 0.09);
+    --c-wash-pressed: rgba(255, 255, 255, 0.14);
+    --c-seg: rgba(255, 255, 255, 0.07);
+    --c-playhead-word: rgba(56, 189, 248, 0.26);
+    --c-playhead-turn: #38bdf8;
+    --c-danger: #ff6b6b;
+    --c-danger-wash: rgba(255, 90, 90, 0.14);
+    --c-gap: rgba(255, 255, 255, 0.12);
+    --c-scrim: rgba(0, 0, 0, 0.55);
+    --c-shadow-pop: 0 0 0 0.5px var(--c-ring-hair), 0 10px 24px -4px rgba(0, 0, 0, 0.6);
+    --sh-card: 0 0 0 0.5px var(--c-ring-hair);
+    --sh-pill: 0 0 0 0.5px var(--c-ring-hair), 0 1px 3px rgba(0, 0, 0, 0.5);
+    --sh-window: 0 0 0 0.5px var(--c-ring-hair), 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+    --m-question: #38bdf8;
+    --m-topic: #a9b0b5;
+    --m-other: #8d959b;
+  }
+}
+:root[data-theme="dark"] {
+  --c-canvas: #15181a;
+  --c-chrome: #1b1f22;
+  --c-shell: #0f1214;
+  --c-shell-glow: rgba(56, 189, 248, 0.07);
+  --c-raised: #1f2427;
+  --c-text: #f1f3f4;
+  --c-text-2: #a9b0b5;
+  --c-text-3: #8d959b;
+  --c-hairline: #30363a;
+  --c-hairline-soft: rgba(255, 255, 255, 0.08);
+  --c-ring-hair: rgba(255, 255, 255, 0.14);
+  --c-accent: #0284c7;
+  --c-accent-hover: #0ea5e9;
+  --c-accent-text: #38bdf8;
+  --c-ring: #38bdf8;
+  --c-accent-solid: #0369a1;
+  --c-ink: #f1f3f4;
+  --c-ink-hover: #ffffff;
+  --c-on-ink: #090b0c;
+  --c-wash-hover: rgba(255, 255, 255, 0.08);
+  --c-wash-row: rgba(255, 255, 255, 0.045);
+  --c-wash-selected: rgba(255, 255, 255, 0.09);
+  --c-wash-pressed: rgba(255, 255, 255, 0.14);
+  --c-seg: rgba(255, 255, 255, 0.07);
+  --c-playhead-word: rgba(56, 189, 248, 0.26);
+  --c-playhead-turn: #38bdf8;
+  --c-danger: #ff6b6b;
+  --c-danger-wash: rgba(255, 90, 90, 0.14);
+  --c-gap: rgba(255, 255, 255, 0.12);
+  --c-scrim: rgba(0, 0, 0, 0.55);
+  --c-shadow-pop: 0 0 0 0.5px var(--c-ring-hair), 0 10px 24px -4px rgba(0, 0, 0, 0.6);
+  --sh-card: 0 0 0 0.5px var(--c-ring-hair);
+  --sh-pill: 0 0 0 0.5px var(--c-ring-hair), 0 1px 3px rgba(0, 0, 0, 0.5);
+  --sh-window: 0 0 0 0.5px var(--c-ring-hair), 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+  --m-question: #38bdf8;
+  --m-topic: #a9b0b5;
+  --m-other: #8d959b;
+}

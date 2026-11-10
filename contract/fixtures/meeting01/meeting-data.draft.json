@@ -1,0 +1,1504 @@
+{
+ "contract": "0.1",
+ "meeting": {
+  "id": "meeting01",
+  "title": "fixture: incident retro",
+  "duration_ms": 69364,
+  "language_hint": "ko",
+  "channels": [
+   {
+    "index": 0,
+    "role": "mic",
+    "label": "나"
+   },
+   {
+    "index": 1,
+    "role": "loopback",
+    "label": "상대"
+   }
+  ]
+ },
+ "recording": {
+  "sha256": "4f4e1620bf9147b330f8756106ea33afaf8ef9f968587de41a59eed0dde2d191",
+  "sample_rate": 16000,
+  "duration_ms": 69364
+ },
+ "version": {
+  "id": "meeting01.draft.1",
+  "kind": "draft",
+  "producers": [
+   {
+    "role": "asr",
+    "engine": {
+     "id": "whisper.cpp",
+     "version": "1.9.5"
+    },
+    "channels": [
+     0
+    ],
+    "network": false,
+    "model": {
+     "id": "ggml-large-v3-turbo",
+     "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+    },
+    "params": {
+     "language": "ko",
+     "max_context": 0,
+     "dtw": "large.v3.turbo",
+     "flash_attn": false,
+     "temperature": 0.0,
+     "temperature_inc": 0.2,
+     "entropy_thold": 2.4,
+     "logprob_thold": -1.0,
+     "no_speech_thold": 0.6
+    },
+    "word_timing": "dtw",
+    "granularity": "word"
+   },
+   {
+    "role": "diarization",
+    "engine": {
+     "id": "sherpa-onnx.vad",
+     "version": "2.0.1"
+    },
+    "channels": [
+     0
+    ],
+    "network": false,
+    "model": {
+     "id": "silero_vad"
+    },
+    "params": {
+     "threshold": 0.5,
+     "min_silence_duration": 0.5,
+     "min_speech_duration": 0.25
+    }
+   },
+   {
+    "role": "asr",
+    "engine": {
+     "id": "whisper.cpp",
+     "version": "1.9.5"
+    },
+    "channels": [
+     1
+    ],
+    "network": false,
+    "model": {
+     "id": "ggml-large-v3-turbo",
+     "sha256": "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
+    },
+    "params": {
+     "language": "ko",
+     "max_context": 0,
+     "dtw": "large.v3.turbo",
+     "flash_attn": false,
+     "temperature": 0.0,
+     "temperature_inc": 0.2,
+     "entropy_thold": 2.4,
+     "logprob_thold": -1.0,
+     "no_speech_thold": 0.6
+    },
+    "word_timing": "dtw",
+    "granularity": "word"
+   },
+   {
+    "role": "diarization",
+    "engine": {
+     "id": "sherpa-onnx.diarization",
+     "version": "2.0.1"
+    },
+    "channels": [
+     1
+    ],
+    "network": false,
+    "model": {
+     "id": "pyannote-segmentation-3-0+3dspeaker-eres2net-base"
+    },
+    "params": {
+     "num_clusters": -1,
+     "threshold": 0.5,
+     "min_duration_on": 0.3,
+     "min_duration_off": 0.5
+    }
+   }
+  ]
+ },
+ "coverage": [
+  {
+   "channel": 0,
+   "start_ms": 0,
+   "end_ms": 69360
+  },
+  {
+   "channel": 1,
+   "start_ms": 0,
+   "end_ms": 62180
+  }
+ ],
+ "speakers": [
+  {
+   "id": "s0",
+   "channel": 0,
+   "basis": "channel",
+   "label": "나"
+  },
+  {
+   "id": "s1",
+   "channel": 1,
+   "basis": "diarization",
+   "label": "상대 1"
+  }
+ ],
+ "speaker_spans": [
+  {
+   "speaker": "s1",
+   "channel": 1,
+   "start_ms": 470,
+   "end_ms": 7001
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 8742,
+   "end_ms": 17004
+  },
+  {
+   "speaker": "s1",
+   "channel": 1,
+   "start_ms": 17530,
+   "end_ms": 20264
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 21606,
+   "end_ms": 23756
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 24262,
+   "end_ms": 28204
+  },
+  {
+   "speaker": "s1",
+   "channel": 1,
+   "start_ms": 27655,
+   "end_ms": 37308
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 39270,
+   "end_ms": 43852
+  },
+  {
+   "speaker": "s1",
+   "channel": 1,
+   "start_ms": 48057,
+   "end_ms": 52191
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 53830,
+   "end_ms": 59372
+  },
+  {
+   "speaker": "s1",
+   "channel": 1,
+   "start_ms": 60072,
+   "end_ms": 62603
+  },
+  {
+   "speaker": "s0",
+   "channel": 0,
+   "start_ms": 64230,
+   "end_ms": 68172
+  }
+ ],
+ "words": [
+  {
+   "channel": 1,
+   "start_ms": 700,
+   "end_ms": 1180,
+   "text": "지난주",
+   "p": 0.9897,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00000"
+  },
+  {
+   "channel": 1,
+   "start_ms": 1180,
+   "end_ms": 1840,
+   "text": "인시던트",
+   "p": 0.9804,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00001"
+  },
+  {
+   "channel": 1,
+   "start_ms": 1840,
+   "end_ms": 2820,
+   "text": "회고부터",
+   "p": 0.9803,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00002"
+  },
+  {
+   "channel": 1,
+   "start_ms": 2820,
+   "end_ms": 2820,
+   "text": "할게요.",
+   "p": 0.9609,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00003"
+  },
+  {
+   "channel": 1,
+   "start_ms": 3660,
+   "end_ms": 3980,
+   "text": "API",
+   "p": 0.95,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00004"
+  },
+  {
+   "channel": 1,
+   "start_ms": 3980,
+   "end_ms": 5020,
+   "text": "게이트웨이에서",
+   "p": 0.9211,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00005"
+  },
+  {
+   "channel": 1,
+   "start_ms": 5020,
+   "end_ms": 5660,
+   "text": "타임아웃",
+   "p": 0.892,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00006"
+  },
+  {
+   "channel": 1,
+   "start_ms": 5660,
+   "end_ms": 6340,
+   "text": "2연속으로",
+   "p": 0.5826,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00007"
+  },
+  {
+   "channel": 1,
+   "start_ms": 6340,
+   "end_ms": 6740,
+   "text": "났습니다.",
+   "p": 0.8683,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00008"
+  },
+  {
+   "channel": 0,
+   "start_ms": 8800,
+   "end_ms": 9160,
+   "text": "The",
+   "p": 0.0774,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00009"
+  },
+  {
+   "channel": 0,
+   "start_ms": 9160,
+   "end_ms": 9580,
+   "text": "marketing",
+   "p": 0.9308,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00010"
+  },
+  {
+   "channel": 0,
+   "start_ms": 9580,
+   "end_ms": 10280,
+   "text": "team",
+   "p": 0.9966,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00011"
+  },
+  {
+   "channel": 0,
+   "start_ms": 10280,
+   "end_ms": 10640,
+   "text": "needs",
+   "p": 0.5233,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00012"
+  },
+  {
+   "channel": 0,
+   "start_ms": 10640,
+   "end_ms": 11280,
+   "text": "brand",
+   "p": 0.9613,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00013"
+  },
+  {
+   "channel": 0,
+   "start_ms": 11280,
+   "end_ms": 12440,
+   "text": "identity와",
+   "p": 0.6419,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00014"
+  },
+  {
+   "channel": 0,
+   "start_ms": 12440,
+   "end_ms": 12660,
+   "text": "target",
+   "p": 0.765,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00015"
+  },
+  {
+   "channel": 0,
+   "start_ms": 12660,
+   "end_ms": 13420,
+   "text": "고객층을",
+   "p": 0.8071,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00016"
+  },
+  {
+   "channel": 0,
+   "start_ms": 13420,
+   "end_ms": 14140,
+   "text": "연결하는",
+   "p": 0.9982,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00017"
+  },
+  {
+   "channel": 0,
+   "start_ms": 14140,
+   "end_ms": 14580,
+   "text": "전략적",
+   "p": 0.9801,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00018"
+  },
+  {
+   "channel": 0,
+   "start_ms": 14760,
+   "end_ms": 15320,
+   "text": "접근",
+   "p": 0.8728,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00019"
+  },
+  {
+   "channel": 0,
+   "start_ms": 15320,
+   "end_ms": 15760,
+   "text": "to",
+   "p": 0.7355,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00020"
+  },
+  {
+   "channel": 0,
+   "start_ms": 15760,
+   "end_ms": 16740,
+   "text": "launch",
+   "p": 0.9969,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00021"
+  },
+  {
+   "channel": 0,
+   "start_ms": 16740,
+   "end_ms": 16740,
+   "text": "successfully.",
+   "p": 0.9704,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00022"
+  },
+  {
+   "channel": 1,
+   "start_ms": 17760,
+   "end_ms": 18080,
+   "text": "그거",
+   "p": 0.9891,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00023"
+  },
+  {
+   "channel": 1,
+   "start_ms": 18080,
+   "end_ms": 18680,
+   "text": "커넥션",
+   "p": 0.9947,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00024"
+  },
+  {
+   "channel": 1,
+   "start_ms": 18680,
+   "end_ms": 18900,
+   "text": "풀",
+   "p": 0.9711,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00025"
+  },
+  {
+   "channel": 1,
+   "start_ms": 18900,
+   "end_ms": 19460,
+   "text": "설정",
+   "p": 0.9855,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00026"
+  },
+  {
+   "channel": 1,
+   "start_ms": 19460,
+   "end_ms": 19700,
+   "text": "문제",
+   "p": 0.9997,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00027"
+  },
+  {
+   "channel": 1,
+   "start_ms": 19700,
+   "end_ms": 20100,
+   "text": "아니었어요?",
+   "p": 0.9728,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00028"
+  },
+  {
+   "channel": 0,
+   "start_ms": 21860,
+   "end_ms": 22200,
+   "text": "이건",
+   "p": 0.5897,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00029"
+  },
+  {
+   "channel": 0,
+   "start_ms": 22200,
+   "end_ms": 22800,
+   "text": "명백히",
+   "p": 0.9981,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00030"
+  },
+  {
+   "channel": 0,
+   "start_ms": 22800,
+   "end_ms": 23200,
+   "text": "raise",
+   "p": 0.3824,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00031"
+  },
+  {
+   "channel": 0,
+   "start_ms": 23200,
+   "end_ms": 23520,
+   "text": "condition이다.",
+   "p": 0.9881,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00032"
+  },
+  {
+   "channel": 0,
+   "start_ms": 24520,
+   "end_ms": 24900,
+   "text": "Multiple",
+   "p": 0.9732,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00033"
+  },
+  {
+   "channel": 0,
+   "start_ms": 24900,
+   "end_ms": 25100,
+   "text": "threads",
+   "p": 0.9996,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00034"
+  },
+  {
+   "channel": 0,
+   "start_ms": 25100,
+   "end_ms": 25600,
+   "text": "are",
+   "p": 0.9995,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00035"
+  },
+  {
+   "channel": 0,
+   "start_ms": 25600,
+   "end_ms": 25800,
+   "text": "accessing",
+   "p": 0.9993,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00036"
+  },
+  {
+   "channel": 0,
+   "start_ms": 25800,
+   "end_ms": 26040,
+   "text": "the",
+   "p": 0.9986,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00037"
+  },
+  {
+   "channel": 0,
+   "start_ms": 26040,
+   "end_ms": 26520,
+   "text": "same",
+   "p": 0.9998,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00038"
+  },
+  {
+   "channel": 0,
+   "start_ms": 26520,
+   "end_ms": 26800,
+   "text": "resource",
+   "p": 0.9882,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00039"
+  },
+  {
+   "channel": 0,
+   "start_ms": 26800,
+   "end_ms": 27240,
+   "text": "without",
+   "p": 0.9904,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00040"
+  },
+  {
+   "channel": 0,
+   "start_ms": 27240,
+   "end_ms": 27580,
+   "text": "proper",
+   "p": 0.9992,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00041"
+  },
+  {
+   "channel": 0,
+   "start_ms": 27580,
+   "end_ms": 27640,
+   "text": "locking.",
+   "p": 0.997,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00042"
+  },
+  {
+   "channel": 1,
+   "start_ms": 27820,
+   "end_ms": 28020,
+   "text": "풀",
+   "p": 0.9783,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00043"
+  },
+  {
+   "channel": 1,
+   "start_ms": 28020,
+   "end_ms": 28560,
+   "text": "사이즈를",
+   "p": 0.9807,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00044"
+  },
+  {
+   "channel": 1,
+   "start_ms": 28560,
+   "end_ms": 29040,
+   "text": "늘리고",
+   "p": 0.9988,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00045"
+  },
+  {
+   "channel": 1,
+   "start_ms": 29040,
+   "end_ms": 29460,
+   "text": "리트리",
+   "p": 0.9281,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00046"
+  },
+  {
+   "channel": 1,
+   "start_ms": 29460,
+   "end_ms": 29960,
+   "text": "로직에",
+   "p": 0.9514,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00047"
+  },
+  {
+   "channel": 1,
+   "start_ms": 29960,
+   "end_ms": 30520,
+   "text": "백오프를",
+   "p": 0.33,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00048"
+  },
+  {
+   "channel": 1,
+   "start_ms": 30520,
+   "end_ms": 31120,
+   "text": "넣었다고",
+   "p": 0.9953,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00049"
+  },
+  {
+   "channel": 1,
+   "start_ms": 31120,
+   "end_ms": 32620,
+   "text": "들었어요.",
+   "p": 0.9897,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00050"
+  },
+  {
+   "channel": 1,
+   "start_ms": 32620,
+   "end_ms": 33480,
+   "text": "맞아요.",
+   "p": 0.5446,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00051"
+  },
+  {
+   "channel": 1,
+   "start_ms": 33480,
+   "end_ms": 33980,
+   "text": "그래서",
+   "p": 0.9868,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00052"
+  },
+  {
+   "channel": 1,
+   "start_ms": 33980,
+   "end_ms": 34240,
+   "text": "이번",
+   "p": 0.9719,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00053"
+  },
+  {
+   "channel": 1,
+   "start_ms": 34240,
+   "end_ms": 35020,
+   "text": "스프린트의",
+   "p": 0.4849,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00054"
+  },
+  {
+   "channel": 1,
+   "start_ms": 35020,
+   "end_ms": 35340,
+   "text": "로드",
+   "p": 0.9921,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00055"
+  },
+  {
+   "channel": 1,
+   "start_ms": 35340,
+   "end_ms": 36180,
+   "text": "테스트를",
+   "p": 0.9988,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00056"
+  },
+  {
+   "channel": 1,
+   "start_ms": 36180,
+   "end_ms": 36460,
+   "text": "같이",
+   "p": 0.9995,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00057"
+  },
+  {
+   "channel": 1,
+   "start_ms": 36460,
+   "end_ms": 37240,
+   "text": "돌려보려고요.",
+   "p": 0.9302,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00058"
+  },
+  {
+   "channel": 0,
+   "start_ms": 39480,
+   "end_ms": 39780,
+   "text": "이건",
+   "p": 0.657,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00059"
+  },
+  {
+   "channel": 0,
+   "start_ms": 39780,
+   "end_ms": 40040,
+   "text": "진짜",
+   "p": 0.9873,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00060"
+  },
+  {
+   "channel": 0,
+   "start_ms": 40040,
+   "end_ms": 40500,
+   "text": "코드",
+   "p": 0.4503,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00061"
+  },
+  {
+   "channel": 0,
+   "start_ms": 40500,
+   "end_ms": 40980,
+   "text": "스타일이",
+   "p": 0.7392,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00062"
+  },
+  {
+   "channel": 0,
+   "start_ms": 40980,
+   "end_ms": 41240,
+   "text": "문제야",
+   "p": 0.9924,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00063"
+  },
+  {
+   "channel": 0,
+   "start_ms": 41700,
+   "end_ms": 41920,
+   "text": "그냥",
+   "p": 0.9983,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00064"
+  },
+  {
+   "channel": 0,
+   "start_ms": 41920,
+   "end_ms": 42600,
+   "text": "린트라도",
+   "p": 0.8118,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00065"
+  },
+  {
+   "channel": 0,
+   "start_ms": 42600,
+   "end_ms": 42800,
+   "text": "좀",
+   "p": 0.9915,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00066"
+  },
+  {
+   "channel": 0,
+   "start_ms": 42800,
+   "end_ms": 43140,
+   "text": "돌리자",
+   "p": 0.9933,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00067"
+  },
+  {
+   "channel": 0,
+   "start_ms": 43140,
+   "end_ms": 43380,
+   "text": "제발",
+   "p": 0.9899,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00068"
+  },
+  {
+   "channel": 1,
+   "start_ms": 48240,
+   "end_ms": 48620,
+   "text": "결정",
+   "p": 0.8511,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00069"
+  },
+  {
+   "channel": 1,
+   "start_ms": 48620,
+   "end_ms": 49220,
+   "text": "사항으로",
+   "p": 0.9259,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00070"
+  },
+  {
+   "channel": 1,
+   "start_ms": 49220,
+   "end_ms": 50040,
+   "text": "남기고",
+   "p": 0.9994,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00071"
+  },
+  {
+   "channel": 1,
+   "start_ms": 50040,
+   "end_ms": 50500,
+   "text": "액션",
+   "p": 0.8837,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00072"
+  },
+  {
+   "channel": 1,
+   "start_ms": 50500,
+   "end_ms": 51160,
+   "text": "아이템은",
+   "p": 0.9817,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00073"
+  },
+  {
+   "channel": 1,
+   "start_ms": 51160,
+   "end_ms": 51420,
+   "text": "제가",
+   "p": 0.9998,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00074"
+  },
+  {
+   "channel": 1,
+   "start_ms": 51420,
+   "end_ms": 52080,
+   "text": "담당할게요.",
+   "p": 0.9956,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00075"
+  },
+  {
+   "channel": 0,
+   "start_ms": 53980,
+   "end_ms": 54220,
+   "text": "아까",
+   "p": 0.981,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00076"
+  },
+  {
+   "channel": 0,
+   "start_ms": 54220,
+   "end_ms": 54480,
+   "text": "코드",
+   "p": 0.9941,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00077"
+  },
+  {
+   "channel": 0,
+   "start_ms": 54480,
+   "end_ms": 54760,
+   "text": "리뷰",
+   "p": 0.9984,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00078"
+  },
+  {
+   "channel": 0,
+   "start_ms": 54760,
+   "end_ms": 55220,
+   "text": "하다가",
+   "p": 0.6045,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00079"
+  },
+  {
+   "channel": 0,
+   "start_ms": 55220,
+   "end_ms": 55380,
+   "text": "진짜",
+   "p": 0.7291,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00080"
+  },
+  {
+   "channel": 0,
+   "start_ms": 55380,
+   "end_ms": 55780,
+   "text": "어이없던",
+   "p": 0.7608,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00081"
+  },
+  {
+   "channel": 0,
+   "start_ms": 55780,
+   "end_ms": 55860,
+   "text": "게",
+   "p": 0.8512,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00082"
+  },
+  {
+   "channel": 0,
+   "start_ms": 56120,
+   "end_ms": 56380,
+   "text": "그",
+   "p": 0.9994,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00083"
+  },
+  {
+   "channel": 0,
+   "start_ms": 56380,
+   "end_ms": 56560,
+   "text": "사람이",
+   "p": 0.9956,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00084"
+  },
+  {
+   "channel": 0,
+   "start_ms": 56560,
+   "end_ms": 56800,
+   "text": "널",
+   "p": 0.92,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00085"
+  },
+  {
+   "channel": 0,
+   "start_ms": 56800,
+   "end_ms": 57100,
+   "text": "책도",
+   "p": 0.8946,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00086"
+  },
+  {
+   "channel": 0,
+   "start_ms": 57100,
+   "end_ms": 57180,
+   "text": "안",
+   "p": 0.7258,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00087"
+  },
+  {
+   "channel": 0,
+   "start_ms": 57180,
+   "end_ms": 57980,
+   "text": "해놓고",
+   "p": 0.8971,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00088"
+  },
+  {
+   "channel": 0,
+   "start_ms": 57980,
+   "end_ms": 58460,
+   "text": "프로덕션에",
+   "p": 0.4954,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00089"
+  },
+  {
+   "channel": 0,
+   "start_ms": 58460,
+   "end_ms": 58620,
+   "text": "바로",
+   "p": 0.9757,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00090"
+  },
+  {
+   "channel": 0,
+   "start_ms": 58620,
+   "end_ms": 58920,
+   "text": "올렸더라",
+   "p": 0.9799,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00091"
+  },
+  {
+   "channel": 1,
+   "start_ms": 60340,
+   "end_ms": 60660,
+   "text": "PR",
+   "p": 0.6697,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00092"
+  },
+  {
+   "channel": 1,
+   "start_ms": 60660,
+   "end_ms": 61320,
+   "text": "올라오면",
+   "p": 0.9914,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00093"
+  },
+  {
+   "channel": 1,
+   "start_ms": 61320,
+   "end_ms": 61580,
+   "text": "제가",
+   "p": 0.8979,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00094"
+  },
+  {
+   "channel": 1,
+   "start_ms": 61580,
+   "end_ms": 62180,
+   "text": "리뷰하겠습니다.",
+   "p": 0.6798,
+   "end_estimated": true,
+   "speaker": "s1",
+   "speaker_status": "assigned",
+   "id": "w00095"
+  },
+  {
+   "channel": 0,
+   "start_ms": 64440,
+   "end_ms": 64640,
+   "text": "이번",
+   "p": 0.7878,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00096"
+  },
+  {
+   "channel": 0,
+   "start_ms": 64640,
+   "end_ms": 65020,
+   "text": "기능은",
+   "p": 0.9937,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00097"
+  },
+  {
+   "channel": 0,
+   "start_ms": 65020,
+   "end_ms": 65280,
+   "text": "너무",
+   "p": 0.9838,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00098"
+  },
+  {
+   "channel": 0,
+   "start_ms": 65280,
+   "end_ms": 66040,
+   "text": "복잡해,",
+   "p": 0.15,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00099"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66040,
+   "end_ms": 66180,
+   "text": "we",
+   "p": 0.4751,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00100"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66180,
+   "end_ms": 66300,
+   "text": "need",
+   "p": 0.9902,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00101"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66300,
+   "end_ms": 66520,
+   "text": "to",
+   "p": 0.9806,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00102"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66520,
+   "end_ms": 66720,
+   "text": "break",
+   "p": 0.9929,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00103"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66720,
+   "end_ms": 66920,
+   "text": "it",
+   "p": 0.971,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00104"
+  },
+  {
+   "channel": 0,
+   "start_ms": 66920,
+   "end_ms": 67120,
+   "text": "down",
+   "p": 0.9906,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00105"
+  },
+  {
+   "channel": 0,
+   "start_ms": 67120,
+   "end_ms": 67520,
+   "text": "into",
+   "p": 0.971,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00106"
+  },
+  {
+   "channel": 0,
+   "start_ms": 67520,
+   "end_ms": 67940,
+   "text": "smaller",
+   "p": 0.9683,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00107"
+  },
+  {
+   "channel": 0,
+   "start_ms": 67940,
+   "end_ms": 69360,
+   "text": "tasks.",
+   "p": 0.9404,
+   "end_estimated": true,
+   "speaker": "s0",
+   "speaker_status": "assigned",
+   "id": "w00108"
+  }
+ ],
+ "turns": [
+  {
+   "id": "t0000",
+   "speaker": "s1",
+   "first_word": "w00000",
+   "last_word": "w00008",
+   "start_ms": 700,
+   "end_ms": 6740
+  },
+  {
+   "id": "t0001",
+   "speaker": "s0",
+   "first_word": "w00009",
+   "last_word": "w00022",
+   "start_ms": 8800,
+   "end_ms": 16740
+  },
+  {
+   "id": "t0002",
+   "speaker": "s1",
+   "first_word": "w00023",
+   "last_word": "w00028",
+   "start_ms": 17760,
+   "end_ms": 20100
+  },
+  {
+   "id": "t0003",
+   "speaker": "s0",
+   "first_word": "w00029",
+   "last_word": "w00042",
+   "start_ms": 21860,
+   "end_ms": 27640
+  },
+  {
+   "id": "t0004",
+   "speaker": "s1",
+   "first_word": "w00043",
+   "last_word": "w00058",
+   "start_ms": 27820,
+   "end_ms": 37240
+  },
+  {
+   "id": "t0005",
+   "speaker": "s0",
+   "first_word": "w00059",
+   "last_word": "w00068",
+   "start_ms": 39480,
+   "end_ms": 43380
+  },
+  {
+   "id": "t0006",
+   "speaker": "s1",
+   "first_word": "w00069",
+   "last_word": "w00075",
+   "start_ms": 48240,
+   "end_ms": 52080
+  },
+  {
+   "id": "t0007",
+   "speaker": "s0",
+   "first_word": "w00076",
+   "last_word": "w00091",
+   "start_ms": 53980,
+   "end_ms": 58920
+  },
+  {
+   "id": "t0008",
+   "speaker": "s1",
+   "first_word": "w00092",
+   "last_word": "w00095",
+   "start_ms": 60340,
+   "end_ms": 62180
+  },
+  {
+   "id": "t0009",
+   "speaker": "s0",
+   "first_word": "w00096",
+   "last_word": "w00108",
+   "start_ms": 64440,
+   "end_ms": 69360
+  }
+ ]
+}

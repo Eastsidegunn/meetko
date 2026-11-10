@@ -1,0 +1,23 @@
+[package]
+id = "meetko/action-items-py"
+version = "0.1.0"
+kind = "plugin"
+contract = "0.1"
+license = "AGPL-3.0-or-later"
+description = "규칙 기반 액션아이템과 결정사항 표시"
+
+[run]
+command = ["python3", "-I", "-S", "plugin.py"]
+protocol = "stdio-jsonrpc"
+
+[input]
+transcript = true
+speakers = true
+meeting = false
+audio = "none"
+
+[output]
+display = ["action_items", "timeline_marker"]
+
+[permissions]
+network = false

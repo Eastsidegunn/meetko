@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gallery-list"
+description = "Enables the gallery_list command without any pre-configured scope."
+commands.allow = ["gallery_list"]
+
+[[permission]]
+identifier = "deny-gallery-list"
+description = "Denies the gallery_list command without any pre-configured scope."
+commands.deny = ["gallery_list"]

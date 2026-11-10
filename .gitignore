@@ -1,0 +1,23 @@
+# local only: audio, third-party models, engine raw output (may hold local paths)
+raw/
+models/
+.venv/
+__pycache__/
+.hypothesis/
+.pytest_cache/
+target/
+# desktop app: dependencies, frontend build, generated Tauri schemas
+node_modules/
+app/dist/
+app/src-tauri/gen/
+# stray engine output written to the repo root by a manual run
+/.json
+# design research and candidates: local only
+design/
+/DESIGN.md
+# model weights (downloaded, never committed)
+*.gguf
+*.onnx
+# local editor/assistant settings and OS files
+.claude/
+.DS_Store

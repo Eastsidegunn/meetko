@@ -1,0 +1,98 @@
+# SAMPLE. Copy this file to `.github/workflows/index.yml` in the future gallery repo
+# (`Eastsidegunn/meetko-plugins`), together with `build_index.py` and `index.schema.json`
+# placed in the gallery repo root. It does not run in the meetko repo.
+#
+# Once a day it asks GitHub for repos with the topic `meetko-plugin`, rebuilds index.json and
+# commits it when it changed. The app reads the file from
+#   https://raw.githubusercontent.com/Eastsidegunn/meetko-plugins/main/index.json
+# (or serve it with GitHub Pages instead; set MEETKO_PLUGIN_INDEX_URL accordingly).
+#
+# Two jobs on purpose. `build` handles data from strangers' repositories (it parses their
+# manifests and tarballs) and has a read-only token with no stored credentials. `commit` is the only
+# job that can write, and it only commits the file the build produced; it never runs strangers' data
+# through anything but a JSON comparison.
+#
+# The index is a convenience filter, not a review. Bad plugins are reported as issues on the
+# gallery repo; remove a plugin with `blocklist.txt` (one entry per line: OWNER/REPO, OWNER/* for
+# every repo of an owner, or a 40-character commit sha; `#` starts a comment), or by asking the
+# owner to drop the topic.
+#
+# Needs Python 3.11 or newer (build_index.py uses tomllib).
+#
+# Action pins: every action is pinned by full commit sha. checkout and setup-python use the same
+# pins as the meetko repo's own .github/workflows/ci.yml.
+
+name: plugin index
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      allow_shrink:
+        description: "accept an index with less than half of the previous plugins"
+        type: boolean
+        default: false
+
+# nothing by default; each job asks for what it needs
+permissions: {}
+
+concurrency:
+  group: plugin-index
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: build index.json
+        env:
+          # the workflow's own token only raises the API rate limit; it can read public repos
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_SHRINK: ${{ inputs.allow_shrink }}
+        run: |
+          flags=""
+          if [ "$ALLOW_SHRINK" = "true" ]; then flags="--allow-shrink"; fi
+          # fails (and writes nothing) when the search fails or when more than half of the
+          # previous plugins disappeared
+          python -I build_index.py --out index.next.json --previous index.json --blocklist blocklist.txt $flags
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: index
+          path: index.next.json
+          if-no-files-found: error
+          retention-days: 1
+
+  commit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: index
+      - name: commit when changed (ignoring the timestamp)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          strip='import json,sys; d=json.load(open(sys.argv[1])); d["generated"]=""; print(json.dumps(d,sort_keys=True))'
+          old=$(python3 -I -c "$strip" index.json 2>/dev/null || true)
+          new=$(python3 -I -c "$strip" index.next.json)
+          if [ "$old" != "$new" ]; then
+            mv index.next.json index.json
+            git add index.json
+            git commit -m "update plugin index"
+            git push
+          fi

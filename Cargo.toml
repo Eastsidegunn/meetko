@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/meetko-core", "crates/meetko-cli"]
+# independent crates that live in this tree and build on their own (the desktop app needs the
+# built frontend at compile time, see app/src-tauri/Cargo.toml; the streaming engines link the
+# prebuilt libraries fetched by their fetch-libs.sh)
+exclude = ["plugins/talk-time-rs", "app/src-tauri", "engines/sherpa-stream", "engines/nemotron-stream"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false

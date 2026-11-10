@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meetko.invalid/schema/capture-0.1.json",
+  "title": "meetko capture manifest 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "patternProperties": {
+    "^x_[a-z0-9_]+$": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "contract",
+    "kind",
+    "provider",
+    "started_at",
+    "sample_rate",
+    "duration_ms",
+    "complete",
+    "channels"
+  ],
+  "properties": {
+    "contract": {
+      "const": "0.1"
+    },
+    "kind": {
+      "const": "capture"
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sample_rate": {
+      "const": 16000
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "complete": {
+      "type": "boolean",
+      "description": "false = provisional checkpoint manifest (recording running or killed); sha256/recording_sha256/end_reason may be absent or empty."
+    },
+    "end_reason": {
+      "enum": [
+        "user",
+        "eof",
+        "signal",
+        "stream_lost",
+        "write_failed",
+        "watchdog",
+        "error"
+      ]
+    },
+    "recording_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "sha256 over the lines \"<index>:<channel sha256>\\n\" in index order."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "e.g. frames_mismatch, pad_failed_channel_N, finalize_failed_channel_N. Present => complete is false."
+    },
+    "channels": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/channel",
+          "properties": {
+            "index": {
+              "const": 0
+            },
+            "role": {
+              "const": "mic"
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/channel",
+          "properties": {
+            "index": {
+              "const": 1
+            },
+            "role": {
+              "const": "loopback"
+            }
+          }
+        }
+      ],
+      "items": false
+    }
+  },
+  "if": {
+    "properties": {
+      "complete": {
+        "const": true
+      }
+    },
+    "required": [
+      "complete"
+    ]
+  },
+  "then": {
+    "required": [
+      "end_reason",
+      "recording_sha256"
+    ],
+    "properties": {
+      "channels": {
+        "items": {
+          "properties": {
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_ms",
+        "end_ms",
+        "reason",
+        "kind"
+      ],
+      "properties": {
+        "start_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "enum": [
+            "late_start",
+            "end_pad",
+            "idle",
+            "no_data",
+            "dropout",
+            "discontinuity",
+            "write_failed",
+            "conversion_failed",
+            "overlap_trimmed",
+            "restart"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "fill",
+            "loss",
+            "trim",
+            "no_data"
+          ]
+        },
+        "removed_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Only on overlap_trimmed/discontinuity: such a gap is a point marker at start_ms (end_ms == start_ms + 1) and removed_ms is the amount of audio removed there. It does not span real audio."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "late_start",
+                  "end_pad",
+                  "idle"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "fill"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "no_data"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "no_data"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "overlap_trimmed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "trim"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "dropout",
+                  "discontinuity",
+                  "write_failed",
+                  "conversion_failed",
+                  "restart"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "kind": {
+                "const": "loss"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "overlap_trimmed",
+                  "discontinuity"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "removed_ms"
+            ],
+            "properties": {
+              "end_ms": {
+                "description": "= start_ms + 1"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "enum": [
+                  "late_start",
+                  "end_pad",
+                  "idle",
+                  "no_data",
+                  "dropout",
+                  "write_failed",
+                  "conversion_failed",
+                  "restart"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "removed_ms"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "channel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "role",
+        "file",
+        "frames",
+        "sha256",
+        "device",
+        "dropped_buffers",
+        "gaps"
+      ],
+      "properties": {
+        "index": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "role": {
+          "enum": [
+            "mic",
+            "loopback"
+          ]
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[^/\\\\]+\\.wav$",
+          "description": "File name relative to the manifest's directory. The core must reject symlinks."
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^([0-9a-f]{64})?$",
+          "description": "sha256 of the finalized WAV bytes; empty only in a provisional manifest."
+        },
+        "device": {
+          "type": "string",
+          "pattern": "^(default_input|system_output|dev-[0-9a-f]{12})$",
+          "description": "Role string or opaque hash. Never a device name."
+        },
+        "first_buffer_offset_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Offset of the first delivered buffer from timeline zero, clamped to >= 0; absent if none arrived."
+        },
+        "dropped_buffers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
+        "no_buffers": {
+          "const": true,
+          "description": "Present (true) only if the channel never delivered a buffer."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "warnings"
+        ]
+      },
+      "then": {
+        "properties": {
+          "complete": {
+            "const": false
+          }
+        }
+      }
+    }
+  ]
+}

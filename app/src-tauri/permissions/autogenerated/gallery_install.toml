@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-gallery-install"
+description = "Enables the gallery_install command without any pre-configured scope."
+commands.allow = ["gallery_install"]
+
+[[permission]]
+identifier = "deny-gallery-install"
+description = "Denies the gallery_install command without any pre-configured scope."
+commands.deny = ["gallery_install"]

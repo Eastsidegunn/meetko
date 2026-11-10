@@ -1,0 +1,118 @@
+{
+ "utterances": [
+  {
+   "id": "u00",
+   "channel": 1,
+   "speaker": "remote_a",
+   "start": 0.5,
+   "speech_start": 0.523,
+   "end": 6.978,
+   "text": "지난주 incident 회고부터 할게요. API gateway에서 timeout이 연속으로 났습니다.",
+   "source": "tts:macos:Yuna"
+  },
+  {
+   "id": "u01",
+   "channel": 0,
+   "speaker": "me",
+   "start": 7.577,
+   "speech_start": 8.753,
+   "end": 16.985,
+   "text": "The marketing team needs 브랜드 아이덴티티와 타겟 고객층을 연결하는 전략적 접근 to launch successfully.",
+   "source": "hike:00697897-5b8a-49a5-9b97-1ebd80ee1121"
+  },
+  {
+   "id": "u02",
+   "channel": 1,
+   "speaker": "remote_b",
+   "start": 17.585,
+   "speech_start": 17.593,
+   "end": 20.248,
+   "text": "그거 connection pool 설정 문제 아니었어요?",
+   "source": "tts:macos:Reed (Korean (South Korea))"
+  },
+  {
+   "id": "u03",
+   "channel": 0,
+   "speaker": "me",
+   "start": 20.848,
+   "speech_start": 21.585,
+   "end": 28.468,
+   "text": "아 이건 명백히 race condition이다. Multiple threads are accessing the same resource without proper locking.",
+   "source": "hike:01865485-fb52-4c27-9c9a-dee6649af05b"
+  },
+  {
+   "id": "u04",
+   "channel": 1,
+   "speaker": "remote_b",
+   "start": 27.668,
+   "speech_start": 27.714,
+   "end": 31.702,
+   "text": "pool size를 늘리고 retry 로직에 backoff를 넣었다고 들었어요.",
+   "source": "tts:macos:Reed (Korean (South Korea))"
+  },
+  {
+   "id": "u05",
+   "channel": 1,
+   "speaker": "remote_a",
+   "start": 32.302,
+   "speech_start": 32.305,
+   "end": 37.315,
+   "text": "맞아요. 그래서 이번 sprint에 load test를 같이 돌려보려고요.",
+   "source": "tts:macos:Yuna"
+  },
+  {
+   "id": "u06",
+   "channel": 0,
+   "speaker": "me",
+   "start": 37.915,
+   "speech_start": 39.281,
+   "end": 43.495,
+   "text": "이건 진짜 code style이 문제야… 그냥 lint라도 좀 돌리자 제발",
+   "source": "hike:02d94601-e803-421f-8e68-b05d8f0cde99"
+  },
+  {
+   "id": "u07",
+   "channel": 1,
+   "speaker": "remote_a",
+   "start": 48.095,
+   "speech_start": 48.111,
+   "end": 52.196,
+   "text": "결정사항으로 남기고, action item은 제가 담당할게요.",
+   "source": "tts:macos:Yuna"
+  },
+  {
+   "id": "u08",
+   "channel": 0,
+   "speaker": "me",
+   "start": 52.796,
+   "speech_start": 53.825,
+   "end": 59.514,
+   "text": "아까 code review 하다가 진짜 어이없던 게, 그 사람이 null check도 안 해놓고 production에 바로 올렸더라.",
+   "source": "hike:03f5f38a-3a8c-423d-a170-6305e2fd6851"
+  },
+  {
+   "id": "u09",
+   "channel": 1,
+   "speaker": "remote_b",
+   "start": 60.114,
+   "speech_start": 60.135,
+   "end": 62.604,
+   "text": "PR 올라오면 제가 review 하겠습니다.",
+   "source": "tts:macos:Reed (Korean (South Korea))"
+  },
+  {
+   "id": "u10",
+   "channel": 0,
+   "speaker": "me",
+   "start": 63.204,
+   "speech_start": 64.248,
+   "end": 68.364,
+   "text": "이번 기능은 너무 복잡해. We need to break it down into smaller tasks.",
+   "source": "hike:09db2ac1-98e9-47fd-b1a3-1230979b0951"
+  }
+ ],
+ "licenses": {
+  "hike": "Apache-2.0 (thetaone-ai/HiKE)",
+  "tts": "macOS system voice output; redistribution unverified, keep local"
+ }
+}
