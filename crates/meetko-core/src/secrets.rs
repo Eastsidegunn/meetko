@@ -229,9 +229,11 @@ impl SecretStore for MemoryStore {
     }
 }
 
-/// `local` for a plugin added from a folder, else its recorded repo (`github:owner/repo`), lowercase.
+/// `local` for a plugin added from a folder, else its recorded source as `plugin_source::origin_key`
+/// gives it: `github:owner/repo` lowercase (unchanged for root sources, so saved keys still match),
+/// plus `/FOLDER` exactly as written for a plugin installed from a subfolder.
 pub fn origin_of(store: &Store, plugin_id: &str) -> Result<String> {
-    Ok(store.plugin_source(plugin_id)?.map(|s| s.repo.to_ascii_lowercase()).unwrap_or_else(|| "local".into()))
+    Ok(store.plugin_source(plugin_id)?.map(|s| crate::plugin_source::origin_key(&s.repo)).unwrap_or_else(|| "local".into()))
 }
 
 /// The installed plugin's key for `name` and what it holds; refuses a name the installed manifest does not declare.

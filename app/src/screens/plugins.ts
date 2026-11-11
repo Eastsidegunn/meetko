@@ -213,7 +213,7 @@ export async function pluginsScreen(main: HTMLElement): Promise<void> {
         return h("div", { class: "pgrow" },
           h("div", { class: "pn" }, h("span", { class: "nm", text: g.id, title: g.id }), h("span", { class: "vv", text: `@${g.version}` }),
             g.description ? h("small", { text: g.description }) : null,
-            h("small", { text: `github.com/${g.repo} · ${g.ref} · ★${g.stars}${g.license ? ` · ${g.license}` : ""}` })),
+            h("small", { text: `github.com/${g.repo}${g.path ? `/${g.path}` : ""} · ${g.ref} · ★${g.stars}${g.license ? ` · ${g.license}` : ""}` })),
           h("div", { class: "perms" }, ...permTags({ network: g.permissions.network, audio: g.permissions.audio ? "full" : "none", secrets: g.permissions.secrets })),
           h("div", { class: "decl" }, inst));
       }),

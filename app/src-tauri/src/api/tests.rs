@@ -131,7 +131,7 @@ fn an_agent_result_is_listed_with_who_made_it_and_is_not_a_plugin() {
 #[test]
 fn plugin_flow_and_stale_badge() {
     let (_t, core, id) = setup();
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let shown = core.inspect_plugin(&dir).unwrap();
     assert!(!shown.network);
     if cfg!(target_os = "macos") && std::env::var("MEETKO_PLUGIN_SANDBOX").as_deref() != Ok("off") {
@@ -177,8 +177,13 @@ const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
 impl Gallery {
     fn start(manifest_edit: impl Fn(String) -> String, entry_edit: impl Fn(String) -> String) -> Gallery {
+        Self::start_in("", manifest_edit, entry_edit)
+    }
+
+    /// `folder` (empty, or `a/b/`) is where the plugin sits in the repo
+    fn start_in(folder: &str, manifest_edit: impl Fn(String) -> String, entry_edit: impl Fn(String) -> String) -> Gallery {
         use std::io::Write;
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
         let mut b = tar::Builder::new(Vec::new());
         for name in ["meetko.toml", "plugin.py"] {
             let mut data = std::fs::read(dir.join(name)).unwrap();
@@ -186,7 +191,7 @@ impl Gallery {
                 data = manifest_edit(String::from_utf8(data).unwrap()).into_bytes();
             }
             let mut h = tar::Header::new_gnu();
-            let path = format!("meetko-r-{SHA}/{name}");
+            let path = format!("meetko-r-{SHA}/{folder}{name}");
             h.as_old_mut().name[..path.len()].copy_from_slice(path.as_bytes());
             h.set_size(data.len() as u64);
             h.set_mode(0o644);
@@ -252,6 +257,25 @@ fn gallery_list_preview_install() {
     assert_eq!(listed[0].source.as_deref(), preview.source.as_deref());
 }
 
+/// An index row with `path`: only that folder of the repo is downloaded into the preview, installed,
+/// and recorded as `github:OWNER/REPO/FOLDER`.
+#[test]
+fn gallery_installs_a_plugin_from_a_subfolder() {
+    let g = Gallery::start_in("plugins/action-items-py/", |m| m, |i| i.replace(r#""repo":"meetko/r","#, r#""repo":"meetko/r","path":"plugins/action-items-py","#));
+    let (_t, core, _id) = setup();
+    let list = core.gallery_list(&g.index_url()).unwrap();
+    assert_eq!(list[0].path, "plugins/action-items-py");
+    let (fetched, preview) = core.gallery_preview(&list[0], &g.endpoints()).unwrap();
+    assert_eq!(preview.folder, "r/plugins/action-items-py");
+    assert!(preview.source.as_deref().unwrap().starts_with("github:meetko/r/plugins/action-items-py @ "), "{:?}", preview.source);
+    core.gallery_install(&fetched, &preview.code_sha256, None).unwrap();
+    assert_eq!(core.list_plugins().unwrap()[0].source.as_deref(), preview.source.as_deref());
+    // the same row without its path points at the repo root, which has no plugin
+    let g = Gallery::start_in("plugins/action-items-py/", |m| m, |i| i);
+    let list = core.gallery_list(&g.index_url()).unwrap();
+    assert!(core.gallery_preview(&list[0], &g.endpoints()).is_err());
+}
+
 /// The tarball (`git archive`, so export-subst applies) says something other than the index row.
 #[test]
 fn gallery_refuses_a_download_that_differs_from_the_index_entry() {
@@ -282,7 +306,7 @@ fn gallery_refuses_a_download_that_differs_from_the_index_entry() {
 fn gallery_install_over_a_local_plugin_needs_replace() {
     let g = Gallery::start(|m| m, |i| i);
     let (_t, core, _id) = setup();
-    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let shown = core.inspect_plugin(&local).unwrap();
     assert!(shown.replaces.is_none());
     core.add_plugin(&local, &shown.code_sha256, None).unwrap();
@@ -431,7 +455,7 @@ fn the_live_captions_become_the_first_draft_without_whisper() {
     assert_eq!(core.live_draft_source(&id).unwrap(), None, "made once");
     assert_eq!(core.draft_from_live(&id, None, &no_progress, &AtomicBool::new(false)).unwrap().0, draft, "asking again is the same draft");
     let approved = core.approve(&draft).unwrap();
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let shown = core.inspect_plugin(&dir).unwrap();
     core.add_plugin(&dir, &shown.code_sha256, None).unwrap();
     assert!(!core.run_plugin("meetko/action-items-py", &approved).unwrap().stale);
@@ -619,7 +643,7 @@ fn the_batch_engine_is_a_kept_choice_and_auto_by_default() {
 
 /// A copy of action-items-py that declares network, two API keys and a setting, under `version`.
 fn keyed_plugin(version: &str) -> tempfile::TempDir {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let d = tempfile::tempdir().unwrap();
     std::fs::copy(src.join("plugin.py"), d.path().join("plugin.py")).unwrap();
     let m = std::fs::read_to_string(src.join("meetko.toml"))

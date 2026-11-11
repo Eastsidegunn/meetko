@@ -418,7 +418,7 @@ pub struct PluginPreview {
     pub notice: &'static str,
     /// true when plugins run in the OS sandbox in this build
     pub isolated: bool,
-    /// `github:OWNER/REPO @ <ref> (<commit>)` for a plugin that came from the network
+    /// `github:OWNER/REPO[/FOLDER] @ <ref> (<commit>)` for a plugin that came from the network
     pub source: Option<String>,
     /// set when adding this would replace an installed plugin with the same id that came from a
     /// different source: the UI must ask again, showing both, before it passes `replace`
@@ -1158,7 +1158,10 @@ impl Core {
         if preview.settings != entry.permissions.settings {
             return Err(differs("settings list"));
         }
-        preview.folder = spec.repo.clone();
+        preview.folder = match &spec.path {
+            Some(p) => format!("{}/{p}", spec.repo),
+            None => spec.repo.clone(),
+        };
         preview.source = Some(source_text(&fetched.source));
         preview.replaces = self.replaces(&preview.id, Some(&fetched.source))?;
         preview.keeps_values = self.keeps_values(&preview, Some(&fetched.source))?;

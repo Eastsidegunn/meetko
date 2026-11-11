@@ -1,9 +1,11 @@
-# SAMPLE. Copy this file to `.github/workflows/index.yml` in the future gallery repo
+# SAMPLE. Copy this file to `.github/workflows/index.yml` in the catalog repo
 # (`Eastsidegunn/meetko-plugins`), together with `build_index.py` and `index.schema.json`
-# placed in the gallery repo root. It does not run in the meetko repo.
+# placed in the catalog repo root. It does not run in the meetko repo.
 #
-# Once a day it asks GitHub for repos with the topic `meetko-plugin`, rebuilds index.json and
-# commits it when it changed. The app reads the file from
+# When sources.json changes on main (a merged listing PR) and once a day, it rebuilds index.json from
+# the plugins named in sources.json (a repo, optionally a folder in it, and a pinned ref: required except for this repo's own rows),
+# pins each to a commit sha, and commits the file when it changed. The topic search
+# (`meetko-plugin`) is off here (`--no-search`): plugins are listed by pull request. The app reads the file from
 #   https://raw.githubusercontent.com/Eastsidegunn/meetko-plugins/main/index.json
 # (or serve it with GitHub Pages instead; set MEETKO_PLUGIN_INDEX_URL accordingly).
 #
@@ -13,9 +15,9 @@
 # through anything but a JSON comparison.
 #
 # The index is a convenience filter, not a review. Bad plugins are reported as issues on the
-# gallery repo; remove a plugin with `blocklist.txt` (one entry per line: OWNER/REPO, OWNER/* for
-# every repo of an owner, or a 40-character commit sha; `#` starts a comment), or by asking the
-# owner to drop the topic.
+# catalog repo; remove a plugin by deleting its sources.json row, or with `blocklist.txt` (one entry
+# per line: OWNER/REPO, OWNER/REPO/FOLDER, OWNER/* for every repo of an owner, or a 40-character
+# commit sha; `#` starts a comment).
 #
 # Needs Python 3.11 or newer (build_index.py uses tomllib).
 #
@@ -25,6 +27,9 @@
 name: plugin index
 
 on:
+  push:
+    branches: [main]
+    paths: [sources.json]
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
@@ -62,9 +67,9 @@ jobs:
         run: |
           flags=""
           if [ "$ALLOW_SHRINK" = "true" ]; then flags="--allow-shrink"; fi
-          # fails (and writes nothing) when the search fails or when more than half of the
+          # fails (and writes nothing) when sources.json is malformed or when more than half of the
           # previous plugins disappeared
-          python -I build_index.py --out index.next.json --previous index.json --blocklist blocklist.txt $flags
+          python -I build_index.py --sources sources.json --no-search --out index.next.json --previous index.json --blocklist blocklist.txt $flags
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: index

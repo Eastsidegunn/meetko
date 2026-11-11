@@ -44,7 +44,7 @@ fn draft_for(meeting: &str) -> MeetingData {
 }
 
 fn add_action_items(s: &Store) -> meetko_core::store::PluginRow {
-    let dir = root().join("plugins/action-items-py");
+    let dir = root().join("tests/fixtures/plugins/action-items-py");
     let (m, msha) = Manifest::load(&dir).unwrap();
     s.add_plugin(&m, &dir, &msha, &plugin_code_sha256(&m, &dir).unwrap()).unwrap()
 }
@@ -182,7 +182,7 @@ fn a_changed_plugin_is_refused_at_add_and_at_run() {
     let dir = tmp.path().join("plugin");
     std::fs::create_dir_all(&dir).unwrap();
     for f in ["meetko.toml", "plugin.py"] {
-        std::fs::copy(root().join("plugins/action-items-py").join(f), dir.join(f)).unwrap();
+        std::fs::copy(root().join("tests/fixtures/plugins/action-items-py").join(f), dir.join(f)).unwrap();
     }
     let (manifest, msha) = Manifest::load(&dir).unwrap();
     let row = s.add_plugin(&manifest, &dir, &msha, &plugin_code_sha256(&manifest, &dir).unwrap()).unwrap();
@@ -277,7 +277,7 @@ fn install_copies_the_plugin_and_runs_only_the_copy() {
     let src = tmp.path().join("plugin");
     std::fs::create_dir_all(src.join("target/release")).unwrap();
     for f in ["meetko.toml", "plugin.py"] {
-        std::fs::copy(root().join("plugins/action-items-py").join(f), src.join(f)).unwrap();
+        std::fs::copy(root().join("tests/fixtures/plugins/action-items-py").join(f), src.join(f)).unwrap();
     }
     let (manifest, _) = Manifest::load(&src).unwrap();
     let shown = plugin_code_sha256(&manifest, &src).unwrap();
@@ -420,7 +420,7 @@ fn a_plugin_row_with_a_reserved_id_is_left_out_of_the_list() {
     .unwrap();
     let ids: Vec<String> = s.list_plugins().unwrap().into_iter().map(|p| p.id).collect();
     assert_eq!(ids, ["meetko/action-items-py"]);
-    let toml = std::fs::read_to_string(root().join("plugins/action-items-py/meetko.toml")).unwrap();
+    let toml = std::fs::read_to_string(root().join("tests/fixtures/plugins/action-items-py/meetko.toml")).unwrap();
     let man = Manifest::parse(&toml.replace("meetko/action-items-py", "MCP:x")).unwrap();
     assert!(man.require_plugin().unwrap_err().to_string().contains("reserved"));
 }

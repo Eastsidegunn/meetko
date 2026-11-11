@@ -1,0 +1,1 @@
+Test fixtures only, not examples: the plugins the host, CLI and app tests run (`talk-time-rs` must be built with `cargo build --release --locked` for the conformance tests); the example plugins live in the separate `Eastsidegunn/meetko-plugins` repository.

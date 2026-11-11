@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
-      # host.rs conformance tests skip when plugins/talk-time-rs is not built; here that is a failure
+      # host.rs conformance tests skip when tests/fixtures/plugins/talk-time-rs is not built; here that is a failure
       MEETKO_REQUIRE_PLUGINS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -42,7 +42,7 @@ jobs:
           # the root workspace plus the three crates that are excluded from it
           workspaces: |
             . -> target
-            plugins/talk-time-rs -> target
+            tests/fixtures/plugins/talk-time-rs -> target
             app/src-tauri -> target
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -64,14 +64,14 @@ jobs:
         run: npm run build
         working-directory: app
 
-      # talk-time-rs is an independent crate; the Python and Rust conformance tests run its binary
-      # (target/release/talk-time-rs, talk-time-rs.exe on Windows), so build it before they run
-      - name: Build the talk-time-rs plugin
+      # the talk-time-rs test fixture is an independent crate; the Python and Rust conformance tests run
+      # its binary (target/release/talk-time-rs, talk-time-rs.exe on Windows), so build it before they run
+      - name: Build the talk-time-rs test fixture
         run: cargo build --release --locked
-        working-directory: plugins/talk-time-rs
-      - name: Plugin clippy
+        working-directory: tests/fixtures/plugins/talk-time-rs
+      - name: Fixture clippy
         run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: plugins/talk-time-rs
+        working-directory: tests/fixtures/plugins/talk-time-rs
 
       - name: Python reference tests
         run: |
@@ -79,8 +79,6 @@ jobs:
           python -m pytest tests
       - name: Plugin index tests (tomllib needs Python 3.11+)
         run: python -I tools/plugin-index/test_build_index.py
-      - name: summary-py plugin tests (no network: a loopback fake server)
-        run: python -I plugins/summary-py/test_summary.py
 
       - name: Rust tests (workspace)
         run: cargo test --workspace --locked

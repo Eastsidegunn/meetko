@@ -873,7 +873,7 @@ impl Store {
         let before = self.plugin_source(id)?;
         let same = match (&before, new) {
             (None, None) => true,
-            (Some(a), Some(b)) => a.repo.eq_ignore_ascii_case(&b.repo),
+            (Some(a), Some(b)) => crate::plugin_source::origin_key(&a.repo) == crate::plugin_source::origin_key(&b.repo),
             _ => false,
         };
         Ok((!same).then_some((version, before)))

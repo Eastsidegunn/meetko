@@ -16,9 +16,9 @@ VERSIONS = ["draft", "live"]
 # sys.executable: "python3" does not exist on Windows runners, and this is the interpreter under test
 EXE = ".exe" if sys.platform == "win32" else ""
 PLUGINS = {
-    "action-items-py": ([sys.executable, "-I", "-S", "plugin.py"], ROOT / "plugins" / "action-items-py"),
-    "talk-time-rs": ([str(ROOT / "plugins" / "talk-time-rs" / "target" / "release" / f"talk-time-rs{EXE}")],
-                     ROOT / "plugins" / "talk-time-rs"),
+    "action-items-py": ([sys.executable, "-I", "-S", "plugin.py"], ROOT / "tests" / "fixtures" / "plugins" / "action-items-py"),
+    "talk-time-rs": ([str(ROOT / "tests" / "fixtures" / "plugins" / "talk-time-rs" / "target" / "release" / f"talk-time-rs{EXE}")],
+                     ROOT / "tests" / "fixtures" / "plugins" / "talk-time-rs"),
 }
 
 

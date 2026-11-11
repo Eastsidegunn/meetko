@@ -1,5 +1,6 @@
 //! Where an installed plugin came from (migration 3). Kept apart from the plugins table so the
 //! original schema is untouched: a plugin added from a local folder simply has no row here.
+//! `repo` is `github:OWNER/REPO`, or `github:OWNER/REPO/FOLDER` for a plugin in a subfolder.
 
 use rusqlite::{params, OptionalExtension};
 

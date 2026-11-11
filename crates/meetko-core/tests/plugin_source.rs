@@ -715,3 +715,211 @@ fn manifests_with_terminal_escapes_or_hidden_characters_are_refused() {
         assert!(e.is_err(), "{field} -> {value}");
     }
 }
+
+// ---- subfolders: github:OWNER/REPO/FOLDER@REF ----
+
+#[test]
+fn parse_subfolder_specs() {
+    let s = SourceSpec::parse("github:someone/hello/plugins/hello-py@v1.0.0").unwrap().unwrap();
+    assert_eq!((s.owner.as_str(), s.repo.as_str(), s.path.as_deref(), s.reference.as_str()), ("someone", "hello", Some("plugins/hello-py"), "v1.0.0"));
+    assert_eq!(s.repo_id(), "github:someone/hello/plugins/hello-py");
+    assert_eq!(spec("v1").path, None, "the root form is unchanged");
+    assert_eq!(SourceSpec::parse("github:a/b/c_d.e-F@release/1.2").unwrap().unwrap().reference, "release/1.2");
+    let deep = format!("github:a/b/{}@v1", ["x"; 8].join("/"));
+    assert!(SourceSpec::parse(&deep).unwrap().is_some());
+    let at_cap = format!("github:a/b/{}/{}@v1", "y".repeat(99), "y".repeat(100));
+    assert!(SourceSpec::parse(&at_cap).unwrap().is_some(), "200 bytes");
+    for bad in [
+        "github:a/b/@v1".to_string(),                        // empty path
+        "github:a/b//c@v1".into(),                           // empty segment
+        "github:a/b/c/@v1".into(),                           // trailing slash
+        "github:a/b/../c@v1".into(),                         // parent
+        "github:a/b/c/..@v1".into(),
+        "github:a/b/./c@v1".into(),                          // dot segment
+        "github:a/b/.github@v1".into(),                      // hidden folder
+        "github:a/b/c\\d@v1".into(),                         // backslash
+        "github:a/b/c d@v1".into(),                          // space
+        "github:a/b/c:d@v1".into(),                          // colon
+        "github:a/b/c%2e%2e@v1".into(),                      // encoded
+        "github:a/b/c./d@v1".into(),                         // trailing dot (Windows drops it)
+        "github:a/b/con@v1".into(),                          // reserved Windows name
+        "github:a/b/x/nul.txt@v1".into(),
+        "github:a/b/é@v1".into(),                            // non-ASCII
+        format!("github:a/b/{}@v1", ["x"; 9].join("/")),     // too deep
+        format!("github:a/b/{}@v1", "z".repeat(101)),        // segment too long
+        format!("github:a/b/{}/{}@v1", "y".repeat(100), "y".repeat(100)),   // 201 bytes
+    ] {
+        assert!(SourceSpec::parse(&bad).is_err(), "{bad}");
+    }
+}
+
+/// a repo with two plugins in subfolders, a symlink and a stray file elsewhere
+fn catalog_archive(sha: &str) -> Vec<u8> {
+    let mut b = Builder::new(Vec::new());
+    let top = format!("someone-hello-{sha}");
+    raw(&mut b, &format!("{top}/"), EntryType::Directory, b"", None, 0o755);
+    raw(&mut b, &format!("{top}/README.md"), EntryType::Regular, b"catalog", None, 0o644);
+    raw(&mut b, &format!("{top}/link"), EntryType::Symlink, b"", Some("/etc/passwd"), 0o777);
+    raw(&mut b, &format!("{top}/plugins/"), EntryType::Directory, b"", None, 0o755);
+    raw(&mut b, &format!("{top}/plugins/hello/"), EntryType::Directory, b"", None, 0o755);
+    raw(&mut b, &format!("{top}/plugins/hello/meetko.toml"), EntryType::Regular, MANIFEST.as_bytes(), None, 0o644);
+    raw(&mut b, &format!("{top}/plugins/hello/plugin.py"), EntryType::Regular, b"print('hi')\n", None, 0o755);
+    raw(&mut b, &format!("{top}/plugins/hello/lib/x.py"), EntryType::Regular, b"x = 1\n", None, 0o644);
+    raw(&mut b, &format!("{top}/plugins/hello2/meetko.toml"), EntryType::Regular, MANIFEST.as_bytes(), None, 0o644);
+    raw(&mut b, &format!("{top}/plugins/hello2/plugin.py"), EntryType::Regular, b"print('hi')\n", None, 0o755);
+    raw(&mut b, &format!("{top}/plugins/hello2/lib/x.py"), EntryType::Regular, b"x = 1\n", None, 0o644);
+    raw(&mut b, &format!("{top}/plugins/hellofile"), EntryType::Regular, b"not a folder", None, 0o644);
+    // the same folder name with another case: a different folder in Git
+    raw(&mut b, &format!("{top}/Plugins/hello/meetko.toml"), EntryType::Regular, MANIFEST.as_bytes(), None, 0o644);
+    raw(&mut b, &format!("{top}/Plugins/hello/plugin.py"), EntryType::Regular, b"print('hi')\n", None, 0o755);
+    raw(&mut b, &format!("{top}/Plugins/hello/lib/x.py"), EntryType::Regular, b"x = 1\n", None, 0o644);
+    gz(b)
+}
+
+fn sub_spec(path: &str, r: &str) -> SourceSpec {
+    SourceSpec::parse(&format!("github:someone/hello/{path}@{r}")).unwrap().unwrap()
+}
+
+#[test]
+fn installs_only_the_subfolder_and_records_it_as_the_source() {
+    let srv = serve(catalog_archive(SHA));
+    let f = fetch(&endpoints(&srv), &sub_spec("plugins/hello", "v0.2.0")).unwrap();
+    assert_eq!((f.source.repo.as_str(), f.source.sha.as_str()), ("github:someone/hello/plugins/hello", SHA));
+    let mut got: Vec<String> = walk(&f.dir);
+    got.sort();
+    assert_eq!(got, ["lib", "lib/x.py", "meetko.toml", "plugin.py"], "only the folder, prefix removed; the symlink elsewhere was skipped");
+    let data = tempfile::tempdir().unwrap();
+    let store = Store::open(data.path()).unwrap();
+    assert_eq!(store.install_fetched(&f, None, None).unwrap().id, "someone/hello");
+    let src = store.plugin_source("someone/hello").unwrap().unwrap();
+    assert_eq!(src.repo, "github:someone/hello/plugins/hello");
+    // the publisher rule still uses the repo owner
+    let srv = serve(catalog_archive(SHA));
+    let f = fetch(&endpoints(&srv), &SourceSpec::parse("github:other/hello/plugins/hello@v0.2.0").unwrap().unwrap()).unwrap();
+    assert!(store.install_fetched(&f, None, None).unwrap_err().to_string().contains("publisher"));
+}
+
+fn walk(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).unwrap() {
+        let e = e.unwrap();
+        let name = e.file_name().to_string_lossy().into_owned();
+        if e.file_type().unwrap().is_dir() {
+            out.extend(walk(&e.path()).into_iter().map(|c| format!("{name}/{c}")));
+        }
+        out.push(name);
+    }
+    out
+}
+
+#[test]
+fn a_missing_or_unsafe_subfolder_is_refused() {
+    let srv = serve(catalog_archive(SHA));
+    let ep = endpoints(&srv);
+    for (path, why) in [("plugins/nope", "not in the downloaded source"), ("plugins/hellofile", "not a directory"), ("PLUGINS/hello", "not in the downloaded source")] {
+        let e = fetch(&ep, &sub_spec(path, "v0.2.0")).unwrap_err().to_string();
+        assert!(e.contains(why), "{path}: {e}");
+    }
+    // a prefix of a folder name is not that folder
+    assert!(fetch(&ep, &sub_spec("plugins/hell", "v0.2.0")).is_err());
+    // inside the folder the usual rules apply: a link, a parent path anywhere, a file too deep
+    let top = format!("someone-hello-{SHA}");
+    let mut b = Builder::new(Vec::new());
+    raw(&mut b, &format!("{top}/p/meetko.toml"), EntryType::Regular, MANIFEST.as_bytes(), None, 0o644);
+    raw(&mut b, &format!("{top}/p/evil"), EntryType::Symlink, b"", Some("../../x"), 0o777);
+    let srv = serve(gz(b));
+    assert!(fetch(&endpoints(&srv), &sub_spec("p", "v0.2.0")).unwrap_err().to_string().contains("no links"));
+    let mut b = Builder::new(Vec::new());
+    raw(&mut b, &format!("{top}/p/meetko.toml"), EntryType::Regular, MANIFEST.as_bytes(), None, 0o644);
+    raw(&mut b, &format!("{top}/q/../p/x"), EntryType::Regular, b"x", None, 0o644);
+    let srv = serve(gz(b));
+    assert!(fetch(&endpoints(&srv), &sub_spec("p", "v0.2.0")).unwrap_err().to_string().contains("parent"));
+    let tmp = tempfile::tempdir().unwrap();
+    let mut b = Builder::new(Vec::new());
+    raw(&mut b, "top/p/a/b/c/x", EntryType::Regular, b"x", None, 0o644);
+    let lim = Limits { max_depth: 3, ..Limits::default() };
+    assert!(meetko_core::plugin_source::extract_tar_gz_sub(gz(b).as_slice(), &tmp.path().join("d"), &lim, Some("p")).is_err(), "depth counts inside the folder");
+    let mut b = Builder::new(Vec::new());
+    raw(&mut b, "top/p/a/b/x", EntryType::Regular, b"x", None, 0o644);
+    meetko_core::plugin_source::extract_tar_gz_sub(gz(b).as_slice(), &tmp.path().join("e"), &lim, Some("p")).unwrap();
+    // an invalid folder handed straight to the extractor is refused too
+    assert!(meetko_core::plugin_source::extract_tar_gz_sub(gz(Builder::new(Vec::new())).as_slice(), &tmp.path().join("f"), &lim, Some("../p")).is_err());
+}
+
+#[test]
+fn a_subfolder_updates_in_place_and_another_folder_is_another_origin() {
+    let data = tempfile::tempdir().unwrap();
+    let store = Store::open(data.path()).unwrap();
+    let srv = serve(catalog_archive(SHA));
+    let ep = endpoints(&srv);
+    let f1 = fetch(&ep, &sub_spec("plugins/hello", "v0.2.0")).unwrap();
+    store.install_fetched(&f1, None, None).unwrap();
+    // a new commit of the same folder is an update: no flag, the source row follows it
+    let f2 = fetch(&ep, &sub_spec("plugins/hello", OTHER_SHA)).unwrap();
+    store.install_fetched(&f2, None, None).unwrap();
+    let src = store.plugin_source("someone/hello").unwrap().unwrap();
+    assert_eq!((src.repo.as_str(), src.sha.as_str()), ("github:someone/hello/plugins/hello", OTHER_SHA));
+    // the same id from another folder of the repo, or from the repo root, is a different origin
+    let f3 = fetch(&ep, &sub_spec("plugins/hello2", "v0.2.0")).unwrap();
+    assert_eq!(store.install_fetched(&f3, None, None).unwrap_err().code(), "plugin_source_changed");
+    let srv_root = serve(good_archive());
+    let f4 = fetch(&endpoints(&srv_root), &spec("v0.2.0")).unwrap();
+    assert_eq!(store.install_fetched(&f4, None, None).unwrap_err().code(), "plugin_source_changed");
+    assert_eq!(store.plugin_source("someone/hello").unwrap().unwrap().repo, "github:someone/hello/plugins/hello");
+    // with the confirmation it moves to the other folder
+    let key = store.replace_key_for("someone/hello", Some(&f3.source)).unwrap().unwrap();
+    store.install_fetched(&f3, None, Some(&key)).unwrap();
+    assert_eq!(store.plugin_source("someone/hello").unwrap().unwrap().repo, "github:someone/hello/plugins/hello2");
+}
+
+#[test]
+fn index_rows_may_name_a_subfolder() {
+    use meetko_core::plugin_source::parse_index;
+    let row = |id: &str, repo: &str, path: Option<&str>| {
+        let path = path.map(|p| format!(r#""path":"{p}","#)).unwrap_or_default();
+        format!(
+            r#"{{"id":"{id}","name":"n","version":"1.0.0","description":"d","repo":"{repo}",{path}"ref":"main","sha":"{SHA}",
+            "permissions":{{"network":false,"audio":false}},"runtime":"python","license":"MIT","stars":0,"updated":""}}"#
+        )
+    };
+    let text = format!(
+        r#"{{"generated":"x","plugins":[{},{},{},{},{},{}]}}"#,
+        row("acme/a", "acme/catalog", Some("a-py")),
+        row("acme/b", "acme/b", None),
+        row("acme/c", "acme/catalog", Some("../c")),
+        row("acme/d", "acme/catalog", Some("x//d")),
+        row("acme/e", "acme/catalog/e", None),
+        row("acme/f", "acme/catalog", Some("/f"))
+    );
+    let v = parse_index(&text).unwrap();
+    assert_eq!(v.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["acme/a", "acme/b"]);
+    let s = v[0].spec().unwrap();
+    assert_eq!((s.repo_id().as_str(), s.reference.as_str()), ("github:acme/catalog/a-py", SHA));
+    assert_eq!(v[1].spec().unwrap().path, None);
+}
+
+#[test]
+fn owner_and_repo_compare_case_insensitively_the_folder_exactly() {
+    use meetko_core::plugin_source::origin_key;
+    assert_eq!(origin_key("github:SomeOne/Hello"), "github:someone/hello", "root sources: as before");
+    assert_eq!(origin_key("github:SomeOne/Hello/Plugins/X"), "github:someone/hello/Plugins/X");
+    assert_ne!(origin_key("github:a/b/Plugin"), origin_key("github:a/b/plugin"));
+
+    let data = tempfile::tempdir().unwrap();
+    let store = Store::open(data.path()).unwrap();
+    let srv = serve(catalog_archive(SHA));
+    let ep = endpoints(&srv);
+    let f1 = fetch(&ep, &sub_spec("plugins/hello", "v0.2.0")).unwrap();
+    store.install_fetched(&f1, None, None).unwrap();
+    // another case of the owner or repo is the same origin: an update
+    let same = fetch(&ep, &SourceSpec::parse("github:SomeOne/HELLO/plugins/hello@v0.2.0").unwrap().unwrap()).unwrap();
+    assert!(store.replaced_origin("someone/hello", Some(&same.source)).unwrap().is_none());
+    store.install_fetched(&same, None, None).unwrap();
+    assert_eq!(meetko_core::secrets::origin_of(&store, "someone/hello").unwrap(), "github:someone/hello/plugins/hello");
+    // another case of the folder is another folder: another origin, and keys do not follow
+    let other = fetch(&ep, &sub_spec("Plugins/hello", "v0.2.0")).unwrap();
+    assert_eq!(store.install_fetched(&other, None, None).unwrap_err().code(), "plugin_source_changed");
+    let key = store.replace_key_for("someone/hello", Some(&other.source)).unwrap().unwrap();
+    store.install_fetched(&other, None, Some(&key)).unwrap();
+    assert_eq!(meetko_core::secrets::origin_of(&store, "someone/hello").unwrap(), "github:someone/hello/Plugins/hello");
+}

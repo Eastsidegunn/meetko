@@ -168,7 +168,7 @@ class Index(unittest.TestCase):
     def test_schema_file_agrees(self):
         schema = json.loads((HERE / "index.schema.json").read_text(encoding="utf-8"))
         plugin = schema["$defs"]["plugin"]
-        self.assertEqual(set(plugin["required"]) | {"homepage"}, set(plugin["properties"]))
+        self.assertEqual(set(plugin["required"]) | {"homepage", "path"}, set(plugin["properties"]))
         self.assertEqual(set(schema["required"]), {"generated", "plugins"})
         try:
             import jsonschema  # optional; not needed for the stdlib checks
@@ -429,8 +429,12 @@ class FakeGitHub(bi.GitHub):
     def resolve(self, full, ref):
         return {"v1.2.0": SHA, "main": SHA2}.get(ref)
 
-    def manifest(self, full, sha):
-        return self._manifests.get((full, sha))
+    def manifest(self, full, sha, path=""):
+        return self._manifests.get((full, sha, path) if path else (full, sha))
+
+    def json(self, path):
+        full = path.removeprefix("/repos/")
+        return next((r for r in self._repos + getattr(self, "_extra", []) if r["full_name"].lower() == full.lower()), None)
 
 
 class Build(unittest.TestCase):
@@ -461,6 +465,78 @@ class Build(unittest.TestCase):
 
     def test_main_refuses_to_write_nothing_invalid(self):
         self.assertEqual(bi.validate_index({"generated": "x", "plugins": [{"id": "nope"}]})[0], "plugins[0]: wrong keys")
+
+
+class Subfolders(unittest.TestCase):
+    def test_valid_subpath_mirrors_the_app(self):
+        for ok in ("a", "summary-py", "plugins/x_y.z", "/".join(["x"] * 8), "y" * 99 + "/" + "y" * 100, "_x", "-x"):
+            self.assertTrue(bi.valid_subpath(ok), ok)
+        for bad in ("", "/a", "a/", "a//b", "../a", "a/..", "./a", ".github", "a\\b", "a b", "a:b", "a./b", "con", "x/NUL.txt", "lpt1",
+                    "é", "/".join(["x"] * 9), "z" * 101, "y" * 100 + "/" + "y" * 100, 5, None):
+            self.assertFalse(bi.valid_subpath(bad), bad)
+
+    def test_the_manifest_is_read_from_the_folder(self):
+        data = make_tar([("t/meetko.toml", b"root"), ("t/a/meetko.toml", b"folder a"), ("t/a/b/meetko.toml", b"deeper"), ("t/ab/meetko.toml", b"other")])
+        self.assertEqual(bi.manifest_from_tarball(io.BytesIO(data), "a"), b"folder a")
+        self.assertEqual(bi.manifest_from_tarball(io.BytesIO(data), "a/b"), b"deeper")
+        self.assertEqual(bi.manifest_from_tarball(io.BytesIO(data)), b"root")
+        self.assertIsNone(bi.manifest_from_tarball(io.BytesIO(data), "c"))
+        with self.assertRaises(bi.Rejected):
+            bi.manifest_from_tarball(io.BytesIO(data), "../a")
+        with self.assertRaises(bi.Rejected):  # a symlinked manifest in the folder
+            bi.manifest_from_tarball(io.BytesIO(make_tar([("t/a/meetko.toml", b"", {"type": tarfile.SYMTYPE, "linkname": "/etc/passwd"})])), "a")
+
+    def test_sources_file_shape(self):
+        rows = bi.load_sources(json.dumps({"plugins": [{"repo": "acme/cat", "path": "a"}, {"repo": "acme/x", "ref": "v1"}], "unlisted": {"b": "needs a build"}}), catalog="Acme/Cat")
+        self.assertEqual(rows, [{"repo": "acme/cat", "path": "a", "ref": None}, {"repo": "acme/x", "path": "", "ref": "v1"}])
+        for bad in ("[]", "{}", '{"plugins": [{"repo": "acme"}]}', '{"plugins": [{"repo": "acme/x", "path": "../y"}]}', '{"plugins": [{"repo": "acme/x", "ref": "pull/1/head"}]}',
+                    '{"plugins": [{"repo": "acme/x", "extra": 1}]}', '{"plugins": [{"repo": "acme/x"}, {"repo": "ACME/x"}]}', "not json"):
+            with self.assertRaises(bi.FetchFailed, msg=bad):
+                bi.load_sources(bad)
+
+    def test_third_party_rows_must_pin_a_ref(self):
+        unpinned = json.dumps({"plugins": [{"repo": "alice/x"}]})
+        with self.assertRaises(bi.FetchFailed) as e:
+            bi.load_sources(unpinned)
+        self.assertIn("needs a ref", str(e.exception))
+        self.assertEqual(bi.load_sources(json.dumps({"plugins": [{"repo": "alice/x", "ref": "v1.0.0"}]}))[0]["ref"], "v1.0.0")
+        # the catalog's own rows may follow its default branch
+        own = bi.load_sources(json.dumps({"plugins": [{"repo": "eastsidegunn/MEETKO-plugins", "path": "a"}]}))
+        self.assertIsNone(own[0]["ref"])
+        self.assertIsNone(bi.load_sources(unpinned, catalog="alice/x")[0]["ref"])
+
+    def test_build_from_sources_with_folders(self):
+        gh = FakeGitHub(
+            [repo("acme/catalog", 2), repo("acme/solo", 1), repo("acme/searched", 99)],
+            tags={"acme/solo": "v1.2.0"},
+            manifests={
+                ("acme/catalog", SHA2, "a"): GOOD.replace("acme/summary", "acme/a"),
+                ("acme/catalog", SHA2, "b/c"): GOOD.replace("acme/summary", "acme/c"),
+                ("acme/solo", SHA): GOOD.replace("acme/summary", "acme/solo"),
+                ("acme/searched", SHA2): GOOD.replace("acme/summary", "acme/a"),  # same id as a listed one
+                ("evil/catalog", SHA2, "a"): GOOD.replace("acme/summary", "acme/z"),
+            },
+        )
+        gh._extra = [repo("evil/catalog", 50)]
+        sources = bi.load_sources(catalog="acme/catalog", text=json.dumps({"plugins": [
+            {"repo": "acme/catalog", "path": "a"}, {"repo": "acme/catalog", "path": "b/c"}, {"repo": "acme/catalog", "path": "missing"},
+            {"repo": "acme/solo", "ref": "v1.2.0"}, {"repo": "acme/gone", "ref": "v1"}, {"repo": "evil/catalog", "path": "a", "ref": "main"},
+        ]}))
+        doc, notes = bi.build(gh, sources=sources)
+        rows = [(p["id"], p["repo"], p.get("path"), p["ref"], p["sha"]) for p in doc["plugins"]]
+        self.assertEqual(sorted(rows), sorted([("acme/a", "acme/catalog", "a", "main", SHA2), ("acme/c", "acme/catalog", "b/c", "main", SHA2), ("acme/solo", "acme/solo", None, "v1.2.0", SHA)]))
+        self.assertEqual(bi.validate_index(doc), [])
+        text = "\n".join(notes)
+        for why in ("acme/catalog/missing: no meetko.toml in missing/", "acme/gone: repository not found", "evil/catalog/a: package.id publisher", "acme/searched: id acme/a is already listed from acme/catalog/a"):
+            self.assertIn(why, text)
+        only, _ = bi.build(gh, sources=sources, search=False)
+        self.assertEqual(len(only["plugins"]), 3)
+        # an entry's path is checked; a folder can be blocked on its own
+        e = doc["plugins"][0]
+        self.assertTrue(bi.validate_index({"generated": "x", "plugins": [{**e, "path": "../x"}]}))
+        blocked = bi.apply_blocklist(doc, ["acme/catalog/a"])
+        self.assertEqual(sorted(p["id"] for p in blocked["plugins"]), ["acme/c", "acme/solo"])
+        self.assertEqual([p["id"] for p in bi.apply_blocklist(doc, ["acme/catalog"])["plugins"]], ["acme/solo"])
 
 
 if __name__ == "__main__":

@@ -125,8 +125,9 @@ enum PluginCmd {
         #[arg(long)]
         replace: bool,
     },
-    /// install from a source: `github:OWNER/REPO@REF` (REF = tag or full commit sha) or a local
-    /// folder (same as `add`). A tag is resolved to a commit sha and the install is pinned to it.
+    /// install from a source: `github:OWNER/REPO@REF` (REF = tag or full commit sha),
+    /// `github:OWNER/REPO/FOLDER@REF` (a plugin in a subfolder of the repo; only that folder is
+    /// installed) or a local folder (same as `add`). A tag is resolved to a commit sha and the install is pinned to it.
     /// The network is used only by this command. Nothing is built: the plugin must run as checked
     /// out. Same consent, permissions notice and hashes as `add`.
     Install {
@@ -138,7 +139,7 @@ enum PluginCmd {
         #[arg(long)]
         replace: bool,
     },
-    /// fetch `github:OWNER/REPO@REF` and print its manifest and permissions; installs nothing
+    /// fetch `github:OWNER/REPO[/FOLDER]@REF` and print its manifest and permissions; installs nothing
     Info { spec: String },
     /// list plugins with their declared permissions
     List,
@@ -151,7 +152,7 @@ enum PluginCmd {
 #[derive(Subcommand)]
 enum SecretCmd {
     /// save a value (a declared secret or setting); it is read from stdin (never from the command
-    /// line), e.g. `pbpaste | meetko plugin secret set meetko/summary-py ANTHROPIC_API_KEY`. On a
+    /// line), e.g. `pbpaste | meetko plugin secret set eastsidegunn/summary-py ANTHROPIC_API_KEY`. On a
     /// terminal the typed value is not echoed.
     Set { plugin_id: String, name: String },
     /// remove a saved value
@@ -516,7 +517,7 @@ fn run() -> Result<()> {
             }
         },
         Cmd::Plugin(PluginCmd::Info { spec }) => {
-            let sp = SourceSpec::parse(&spec)?.context("info takes github:OWNER/REPO@REF")?;
+            let sp = SourceSpec::parse(&spec)?.context("info takes github:OWNER/REPO@REF or github:OWNER/REPO/FOLDER@REF")?;
             let f = plugin_source::fetch(&Endpoints::from_env()?, &sp)?;
             let _ = show_plugin(&f.dir, Some(&f.source))?;
             eprintln!("note: {PERMISSION_NOTICE}");

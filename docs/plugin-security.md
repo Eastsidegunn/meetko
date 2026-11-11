@@ -112,7 +112,7 @@ What meetko 0.1 does and does not do about a plugin you add. Read this before ad
     listening on localhost work too, but a Unix-domain socket connect is denied even with the network permission),
     an interpreter under a home dot-dir, or whose install prefix overlaps a denied tree or is a whole `/Volumes` drive or
     `/Users` entry, is refused,
-    Python under `-I` imports the common standard library, both bundled examples pass conformance under the production
+    Python under `-I` imports the common standard library, both fixture plugins (`tests/fixtures/plugins/`) pass conformance under the production
     policy, and the plugin's pid is the spawned pid (so the timeout kill still reaches the whole process tree).
 
 ## Secrets (API keys) and settings

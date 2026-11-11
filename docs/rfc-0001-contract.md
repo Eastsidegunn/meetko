@@ -175,5 +175,5 @@ python -I tools/run_sherpa_diar.py models raw/meeting01/loopback.wav raw/engines
 python -I tools/run_vad.py models/silero_vad.onnx raw/meeting01/<ch>.wav raw/engines/sherpa-vad/<ch>.rttm
 python -I tools/build_fixtures.py <model sha256>
 python -I tools/score.py
-(cd plugins/talk-time-rs && cargo build --release) && pytest tests
+(cd tests/fixtures/plugins/talk-time-rs && cargo build --release) && pytest tests
 ```

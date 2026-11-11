@@ -349,16 +349,16 @@ fn only_the_plugin_program_itself_may_be_exec_d() {
 }
 
 #[test]
-fn the_bundled_example_plugins_run_sandboxed_and_pass_conformance() {
+fn the_fixture_plugins_run_sandboxed_and_pass_conformance() {
     use meetko_core::contract::MeetingData;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     for name in ["action-items-py", "talk-time-rs"] {
-        let dir = root.join("plugins").join(name);
+        let dir = root.join("tests/fixtures/plugins").join(name);
         let (m, _) = Manifest::load(&dir).unwrap();
         let (prog, _) = m.resolve_command(&dir).unwrap();
         if prog.components().count() > 1 && !prog.exists() {
             assert!(std::env::var_os("MEETKO_REQUIRE_PLUGINS").is_none(), "{name} is not built");
-            eprintln!("SKIP {name}: cargo build --release in plugins/{name}");
+            eprintln!("SKIP {name}: cargo build --release --locked in tests/fixtures/plugins/{name}");
             continue;
         }
         for version in ["draft", "live"] {

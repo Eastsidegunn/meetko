@@ -1,6 +1,14 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 # 기여 안내
 
+## 가장 좋은 기여: 플러그인 만들기
+
+회의 데이터를 받아 요약, 할 일, 통계 같은 것을 보여 주는 플러그인을 만들어 자기 GitHub 저장소에 올리고, 목록 저장소 [Eastsidegunn/meetko-plugins](https://github.com/Eastsidegunn/meetko-plugins)에 `sources.json` 한 줄을 더하는 PR을 보내 주세요. 그러면 앱의 둘러보기에 나타납니다. 만드는 법과 목록 규칙은 [docs/plugin-publishing.md](docs/plugin-publishing.md), 매니페스트 형식은 [docs/manifest-draft.md](docs/manifest-draft.md)에 있고, 공식 예제는 그 목록 저장소의 폴더들입니다.
+
+*The best way to contribute is a plugin: publish it in your own GitHub repo and open a PR on [Eastsidegunn/meetko-plugins](https://github.com/Eastsidegunn/meetko-plugins) adding it to `sources.json`. See [docs/plugin-publishing.md](docs/plugin-publishing.md).*
+
+## meetko 자체에 기여하기
+
 meetko는 아직 초기 단계입니다. 이슈와 PR을 환영하지만, 방향이 맞는지 큰 변경은 먼저 이슈로 이야기해 주세요.
 
 ## 빌드와 테스트
@@ -11,9 +19,9 @@ CI(`.github/workflows/ci.yml`)가 돌리는 것과 같은 명령입니다.
 # 프런트엔드: 앱 크레이트를 컴파일하기 전에 먼저 빌드해야 합니다
 (cd app && npm ci && npm run build)
 
-# 플러그인 예제를 먼저 빌드합니다 (호스트 적합성 테스트가 이 바이너리를 씁니다)
-(cd plugins/talk-time-rs && cargo build --release --locked)
-(cd plugins/talk-time-rs && cargo clippy --locked --all-targets -- -D warnings)
+# 테스트용 플러그인을 먼저 빌드합니다 (호스트 적합성 테스트가 이 바이너리를 씁니다)
+(cd tests/fixtures/plugins/talk-time-rs && cargo build --release --locked)
+(cd tests/fixtures/plugins/talk-time-rs && cargo clippy --locked --all-targets -- -D warnings)
 
 # 파이썬 참조 구현과 계약 테스트
 python -m pip install -r requirements-dev.txt
@@ -39,7 +47,7 @@ engines/nemotron-stream/fetch-libs.sh && (cd engines/nemotron-stream && cargo te
 테스트와 빌드에만 쓰는 환경변수:
 
 - `MEETKO_REQUIRE_MODELS=1`: 모델이 없으면 모델이 필요한 테스트는 건너뜁니다. 이 값을 주면 건너뛰지 않고 실패합니다(엔진 테스트).
-- `MEETKO_REQUIRE_PLUGINS=1`: `plugins/talk-time-rs`가 빌드되지 않았을 때 호스트 적합성 테스트를 건너뛰지 않고 실패합니다. CI가 설정합니다.
+- `MEETKO_REQUIRE_PLUGINS=1`: 테스트용 플러그인 `tests/fixtures/plugins/talk-time-rs`가 빌드되지 않았을 때 호스트 적합성 테스트를 건너뛰지 않고 실패합니다. CI가 설정합니다.
 - `MEETKO_ENGINE_DEV_RPATH=1`: 릴리스 빌드 엔진도 저장소의 `vendor/` 라이브러리를 찾게 합니다(엔진의 `--release` 테스트용, 배포용 빌드에는 쓰지 않음).
 - `MEETKO_NEMO_BACKEND=vulkan`: `engines/nemotron-stream/fetch-libs.sh`가 Windows Vulkan 빌드를 받습니다(기본 `cpu`).
 - `MEETKO_TEST_PACED=1`: nemotron 엔진의 `stdio` 테스트가 실제 시간 속도로 소리를 넣어 지연을 잽니다.
@@ -63,9 +71,9 @@ engines/nemotron-stream/fetch-libs.sh && (cd engines/nemotron-stream && cargo te
 
 - 기여한 코드는 AGPL-3.0-or-later로 배포됩니다. DCO 서명(`Signed-off-by`)은 요구하지 않습니다.
 - `SPDX-License-Identifier` 줄은 일부 파일(주요 문서와 `capture/macos`의 Swift 파일 등)에만 있습니다. 줄이 없는 파일도 따로 표시가 없으면 AGPL-3.0-or-later입니다.
-- 플러그인은 각자의 저장소에 공개하는 것을 권장합니다. 플러그인을 올리는 방법은 [docs/plugin-publishing.md](docs/plugin-publishing.md)를 보세요.
+- 플러그인은 meetko 저장소가 아니라 각자의 저장소에 두고, 목록에는 위의 PR로 올립니다([docs/plugin-publishing.md](docs/plugin-publishing.md)).
 - PR에는 무엇을, 왜 바꿨는지와 실행한 테스트를 적어 주세요.
 
 ## English (brief)
 
-Open an issue before large changes. Build and test with the commands above (the same as CI): build the frontend first (`npm ci && npm run build` in `app/`), build `plugins/talk-time-rs` in release mode, then `python -m pytest tests`, `cargo test --workspace --locked`, and the app crate tests. The engine crates and the Swift capture sidecar are tested separately and on macOS only. Contract changes (`contract/schemas/`, the RFC, the capture interface) need an RFC-style discussion first. Do not commit audio, model files or personal data. No DCO sign-off is required; contributions are licensed AGPL-3.0-or-later. `SPDX-License-Identifier` lines are present only in some files (main docs, the Swift capture sources and a few others); files without one are AGPL-3.0-or-later unless marked otherwise. Test/build-only environment variables (`MEETKO_REQUIRE_MODELS`, `MEETKO_REQUIRE_PLUGINS`, `MEETKO_ENGINE_DEV_RPATH`, `MEETKO_NEMO_BACKEND`, `MEETKO_TEST_PACED`, `MEETKO_DIAR_MULTI_WAV`, `MEETKO_DIAR_MIC_WAV`) are listed in the Korean section above and in the engine READMEs. Plugins are best published in their own repositories; see `docs/plugin-publishing.md` (GitHub topic `meetko-plugin`, installed with `meetko plugin install github:OWNER/REPO@REF`). Plugin runs are sandboxed on macOS only (`docs/plugin-security.md`); on Windows and Linux they run as your user, so review plugin code accordingly. Gallery index tests: `python -I tools/plugin-index/test_build_index.py`.
+Open an issue before large changes. Build and test with the commands above (the same as CI): build the frontend first (`npm ci && npm run build` in `app/`), build the test fixture `tests/fixtures/plugins/talk-time-rs` in release mode, then `python -m pytest tests`, `cargo test --workspace --locked`, and the app crate tests. The engine crates and the Swift capture sidecar are tested separately and on macOS only. Contract changes (`contract/schemas/`, the RFC, the capture interface) need an RFC-style discussion first. Do not commit audio, model files or personal data. No DCO sign-off is required; contributions are licensed AGPL-3.0-or-later. `SPDX-License-Identifier` lines are present only in some files (main docs, the Swift capture sources and a few others); files without one are AGPL-3.0-or-later unless marked otherwise. Test/build-only environment variables (`MEETKO_REQUIRE_MODELS`, `MEETKO_REQUIRE_PLUGINS`, `MEETKO_ENGINE_DEV_RPATH`, `MEETKO_NEMO_BACKEND`, `MEETKO_TEST_PACED`, `MEETKO_DIAR_MULTI_WAV`, `MEETKO_DIAR_MIC_WAV`) are listed in the Korean section above and in the engine READMEs. The example plugins live in the separate `Eastsidegunn/meetko-plugins` repository; `tests/fixtures/plugins/` holds only what the tests run. Plugins live in their own repositories and are listed by a pull request on `Eastsidegunn/meetko-plugins` (`sources.json`); they install with `meetko plugin install github:OWNER/REPO@REF` or `github:OWNER/REPO/FOLDER@REF` (see `docs/plugin-publishing.md`). Plugin runs are sandboxed on macOS only (`docs/plugin-security.md`); on Windows and Linux they run as your user, so review plugin code accordingly. Gallery index tests: `python -I tools/plugin-index/test_build_index.py`.

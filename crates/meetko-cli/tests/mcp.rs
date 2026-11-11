@@ -406,14 +406,14 @@ fn plugin_results_and_ids_are_out_of_reach() {
     // a plugin cannot take an id from the agent namespace
     let dir = tmp.path().join("p");
     std::fs::create_dir_all(&dir).unwrap();
-    let src = std::fs::read_to_string(root().join("plugins/action-items-py/meetko.toml")).unwrap();
+    let src = std::fs::read_to_string(root().join("tests/fixtures/plugins/action-items-py/meetko.toml")).unwrap();
     std::fs::write(dir.join("meetko.toml"), src.replace("meetko/action-items-py", "mcp:summary")).unwrap();
     std::fs::write(dir.join("plugin.py"), "").unwrap();
     let (man, sha) = Manifest::load(&dir).unwrap();
     let e = s.add_plugin(&man, &dir, &sha, &plugin_code_sha256(&man, &dir).unwrap()).unwrap_err();
     assert!(e.to_string().contains("reserved"), "{e}");
     // a real plugin result is listed as a plugin result and cannot be removed over MCP
-    std::fs::write(dir.join("meetko.toml"), std::fs::read_to_string(root().join("plugins/action-items-py/meetko.toml")).unwrap()).unwrap();
+    std::fs::write(dir.join("meetko.toml"), std::fs::read_to_string(root().join("tests/fixtures/plugins/action-items-py/meetko.toml")).unwrap()).unwrap();
     let (man, sha) = Manifest::load(&dir).unwrap();
     let p = s.add_plugin(&man, &dir, &sha, &plugin_code_sha256(&man, &dir).unwrap()).unwrap();
     let out = json!({ "contract": "0.1", "plugin": { "id": p.id, "version": p.version }, "input": { "version_id": v }, "items": summary("w00000", "w00001") });

@@ -22,7 +22,7 @@ fn fixture(version: &str) -> MeetingData {
 
 /// Returns None (with a message) when the plugin is a binary that was not built.
 fn load_plugin(name: &str) -> Option<(Manifest, PathBuf)> {
-    let dir = root().join("plugins").join(name);
+    let dir = root().join("tests/fixtures/plugins").join(name);
     let (m, _) = Manifest::load(&dir).unwrap();
     let (prog, _) = m.resolve_command(&dir).unwrap();
     // a compiled plugin is `target/release/<name>.exe` on Windows
@@ -30,7 +30,7 @@ fn load_plugin(name: &str) -> Option<(Manifest, PathBuf)> {
     if prog.components().count() > 1 && !built {
         // CI sets MEETKO_REQUIRE_PLUGINS so that a missing build fails instead of passing unseen
         assert!(std::env::var_os("MEETKO_REQUIRE_PLUGINS").is_none(), "{name} is not built, but MEETKO_REQUIRE_PLUGINS is set");
-        eprintln!("SKIP {name}: build it first (cd plugins/{name} && cargo build --release)");
+        eprintln!("SKIP {name}: build it first (cd tests/fixtures/plugins/{name} && cargo build --release --locked)");
         return None;
     }
     Some((m, dir))

@@ -165,7 +165,7 @@ this project. The audio itself is not committed.
 
 ## Rust and npm dependencies
 
-The Rust crates (`Cargo.lock` files in the workspace, `app/src-tauri/`, `engines/*/`, `plugins/talk-time-rs/`)
+The Rust crates (`Cargo.lock` files in the workspace, `app/src-tauri/`, `engines/*/`, `tests/fixtures/plugins/talk-time-rs/`)
 and the npm packages of `app/` (`app/package-lock.json`) are used under their own licenses. They are not
 listed here; the lockfiles name every package and version. To produce a full license report for a
 distributable build, run for example `cargo about` per crate and a license checker over the npm lockfile.

@@ -7,7 +7,7 @@ use std::process::Command;
 const SHA: &str = "89abcdef0123456789abcdef0123456789abcdef";
 
 fn tarball() -> Vec<u8> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let mut b = tar::Builder::new(Vec::new());
     for name in ["meetko.toml", "plugin.py"] {
         let data = std::fs::read(dir.join(name)).unwrap();
@@ -25,9 +25,34 @@ fn tarball() -> Vec<u8> {
 }
 
 fn server() -> String {
+    server_with(tarball())
+}
+
+/// the fixture plugin in `plugins/action-items-py/` of a catalog repo, next to an unrelated file
+fn catalog_tarball() -> Vec<u8> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
+    let mut b = tar::Builder::new(Vec::new());
+    let mut files: Vec<(String, Vec<u8>)> = vec![("README.md".into(), b"catalog".to_vec())];
+    for name in ["meetko.toml", "plugin.py"] {
+        files.push((format!("plugins/action-items-py/{name}"), std::fs::read(dir.join(name)).unwrap()));
+    }
+    for (name, data) in files {
+        let mut h = tar::Header::new_gnu();
+        let path = format!("meetko-r-{SHA}/{name}");
+        h.as_old_mut().name[..path.len()].copy_from_slice(path.as_bytes());
+        h.set_size(data.len() as u64);
+        h.set_mode(0o644);
+        h.set_cksum();
+        b.append(&h, data.as_slice()).unwrap();
+    }
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    e.write_all(&b.into_inner().unwrap()).unwrap();
+    e.finish().unwrap()
+}
+
+fn server_with(data: Vec<u8>) -> String {
     let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let base = format!("http://{}", srv.server_addr().to_ip().unwrap());
-    let data = tarball();
     std::thread::spawn(move || {
         for req in srv.incoming_requests() {
             let url = req.url().to_string();
@@ -87,7 +112,7 @@ fn install_and_info_from_a_github_spec() {
     assert!(!ok && err.contains("publisher"), "{err}");
 
     // a local folder with the same id is a different origin: needs --replace
-    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     let local = local.to_str().unwrap();
     let (_, err, ok) = meetko(&data, &base, &["plugin", "add", "--yes", local]);
     assert!(!ok && err.contains("--replace"), "{err}");
@@ -100,6 +125,34 @@ fn install_and_info_from_a_github_spec() {
     assert!(!ok && err.contains("404"), "{err}");
     let (_, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", "github:meetko/r"]);
     assert!(!ok && err.contains("expected github:OWNER/REPO@REF"), "{err}");
+}
+
+#[test]
+fn install_and_info_from_a_subfolder_spec() {
+    let base = server_with(catalog_tarball());
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let spec = "github:meetko/r/plugins/action-items-py@v1";
+    let (_, err, ok) = meetko(&data, &base, &["plugin", "info", spec]);
+    assert!(ok && err.contains("meetko/action-items-py") && err.contains("github:meetko/r/plugins/action-items-py"), "{err}");
+    let (out, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", spec]);
+    assert!(ok, "{err}");
+    assert_eq!(out.trim(), "meetko/action-items-py");
+    let (out, _, _) = meetko(&data, &base, &["plugin", "list"]);
+    assert!(out.contains(&format!("from github:meetko/r/plugins/action-items-py@{} (v1)", &SHA[..12])), "{out}");
+    // only the folder was installed
+    let installed = std::fs::read_dir(data.join("plugins")).unwrap().map(|e| e.unwrap().path()).find(|p| p.join("meetko.toml").is_file()).unwrap();
+    assert!(installed.join("plugin.py").is_file() && !installed.join("README.md").exists() && !installed.join("plugins").exists());
+    // the same commit again is the same origin (an update), no --replace needed
+    let (_, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", spec]);
+    assert!(ok, "{err}");
+    // a folder without a manifest; a folder that is not there; a path that tries to leave
+    let (_, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", "github:meetko/r/plugins@v1"]);
+    assert!(!ok && err.contains("meetko.toml"), "a folder without a manifest: {err}");
+    let (_, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", "github:meetko/r/plugins/nope@v1"]);
+    assert!(!ok && err.contains("not in the downloaded source"), "{err}");
+    let (_, err, ok) = meetko(&data, &base, &["plugin", "install", "--yes", "github:meetko/r/../x@v1"]);
+    assert!(!ok && err.contains("folder path"), "{err}");
 }
 
 #[test]
@@ -125,21 +178,21 @@ fn error_messages_never_carry_raw_escape_or_bell_bytes() {
 fn secret_commands_refuse_undeclared_names_and_never_take_a_value_argument() {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
-    let plugin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/summary-py");
+    let plugin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/secrets-py");
     let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "add", plugin.to_str().unwrap(), "--yes"]);
     assert!(ok, "{err}");
     assert!(err.contains("API keys:") && err.contains("ANTHROPIC_API_KEY") && !err.contains("stay (same origin)"), "{err}");
     // adding it again from a local folder: the saved values stay, and the command says so
     let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "add", plugin.to_str().unwrap(), "--yes"]);
     assert!(ok && err.contains("stay (same origin)"), "{err}");
-    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/summary-py", "PATH"]);
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/secrets-fixture", "PATH"]);
     assert!(!ok && err.contains("does not declare"), "{err}");
     let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/nope", "ANTHROPIC_API_KEY"]);
     assert!(!ok && err.contains("not found"), "{err}");
     // there is no argument for the value: an extra one is a usage error
-    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/summary-py", "ANTHROPIC_API_KEY", "sk-test-not-real"]);
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/secrets-fixture", "ANTHROPIC_API_KEY", "sk-test-not-real"]);
     assert!(!ok && !err.contains("saved"), "{err}");
-    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/plugins/action-items-py");
     meetko(&data, "http://127.0.0.1:9", &["plugin", "add", local.to_str().unwrap(), "--yes"]);
     let (out, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "status", "meetko/action-items-py"]);
     assert!(ok && out.is_empty() && err.contains("declares no API keys"), "{out} {err}");

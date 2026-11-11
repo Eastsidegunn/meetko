@@ -1,10 +1,19 @@
 """Build the meetko plugin gallery index.
 
-Finds GitHub repos with the topic `meetko-plugin`, reads `meetko.toml` at the latest release
-tag (or the default branch's latest commit), checks it, and writes `index.json`.
+Lists the plugins named in a sources file (`--sources sources.json`, the catalog repo's list that
+people extend by pull request) and, unless `--no-search`, GitHub repos with the topic
+`meetko-plugin`. For each it reads `meetko.toml` at the given ref, else the latest release tag,
+else the default branch's latest commit, checks it, and writes `index.json`. A source may name a
+subfolder of a repo (`"path": "summary-py"`): the manifest is read from that folder and the entry
+carries `path`, so the app installs `github:OWNER/REPO/PATH@SHA`.
 
-    python3.12 -I tools/plugin-index/build_index.py --out index.json [--previous index.json]
-                                                    [--blocklist blocklist.txt] [--allow-shrink]
+    python3.12 -I tools/plugin-index/build_index.py --out index.json [--sources sources.json] [--no-search]
+                                                    [--previous index.json] [--blocklist blocklist.txt] [--allow-shrink]
+
+sources.json: {"plugins": [{"repo": "OWNER/REPO", "path": "FOLDER" (optional), "ref": "TAG or COMMIT"}, ...]}
+(other top-level keys, such as notes on unlisted folders, are ignored). `ref` is required for every
+repository except the catalog's own (`--catalog`, default Eastsidegunn/meetko-plugins), whose rows may
+follow its latest release or default branch: a third-party row is pinned to what was reviewed in the PR.
 
 Stdlib only. Requires Python 3.11 or newer (tomllib); older versions stop with a message.
 `meetko.toml` is read from the tarball of the resolved commit, the same bytes `meetko plugin install`
@@ -55,6 +64,11 @@ ID_RE = re.compile(r"^([a-z0-9][a-z0-9_.-]{0,63})/([a-z0-9][a-z0-9_.-]{0,63})$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$")
+# a subfolder: the same rules as crates/meetko-core/src/plugin_source.rs (valid_subpath)
+SUBPATH_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$")
+MAX_SUBPATH_DEPTH = 8
+MAX_SUBPATH_LEN = 200
+_WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"} | {f"{p}{d}" for p in ("COM", "LPT") for d in "0123456789"}
 # [permissions] secrets / settings: the same rules as crates/meetko-core/src/secrets.rs
 # (valid_secret_name, valid_setting_name, check_declared)
 NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
@@ -127,6 +141,18 @@ def _table(m: dict, key: str) -> dict:
     if not isinstance(v, dict):
         raise Rejected(f"[{key}] must be a table")
     return v
+
+
+def valid_subpath(path: object) -> bool:
+    """1-8 segments joined by `/`, at most 200 bytes; each segment of ASCII letters, digits, `.`, `_`,
+    `-`, not starting with `.` (no `.`, `..`, hidden folders), not ending with `.`, not a reserved
+    Windows device name. No empty segments, so no leading, trailing or doubled `/`, no backslashes."""
+    if not isinstance(path, str) or not path or len(path) > MAX_SUBPATH_LEN:
+        return False
+    segs = path.split("/")
+    return len(segs) <= MAX_SUBPATH_DEPTH and all(
+        SUBPATH_SEGMENT_RE.match(s) and not s.endswith(".") and s.split(".")[0].upper() not in _WINDOWS_RESERVED for s in segs
+    )
 
 
 def _runtime(command: list[str]) -> str:
@@ -256,10 +282,12 @@ def _declared(secrets, settings, network: bool):
     return list(secrets), list(settings)
 
 
-def make_entry(repo: dict, ref: str, sha: str, facts: dict) -> dict:
+def make_entry(repo: dict, ref: str, sha: str, facts: dict, path: str = "") -> dict:
     full = repo["full_name"]
     if not REPO_RE.match(full) or not SHA_RE.match(sha):
         raise Rejected("repo name or sha is malformed")
+    if path and not valid_subpath(path):
+        raise Rejected("the folder path is malformed")
     entry = {
         "id": facts["id"],
         "name": facts["name"],
@@ -274,18 +302,26 @@ def make_entry(repo: dict, ref: str, sha: str, facts: dict) -> dict:
         "stars": int(repo.get("stargazers_count", 0)),
         "updated": repo.get("pushed_at") or repo.get("updated_at") or "",
     }
+    if path:
+        entry["path"] = path
     if facts["homepage"]:
         entry["homepage"] = facts["homepage"]
     return entry
 
 
-def dedupe(entries: list[dict]) -> tuple[list[dict], list[str]]:
-    """One entry per id: most stars wins, ties go to the repo name that sorts first."""
+def where(e: dict) -> str:
+    """OWNER/REPO, or OWNER/REPO/PATH for an entry in a subfolder"""
+    return f"{e['repo']}/{e['path']}" if e.get("path") else e["repo"]
+
+
+def dedupe(entries: list[dict], preferred: list[dict] | None = None) -> tuple[list[dict], list[str]]:
+    """One entry per id. `preferred` (the sources file, in its order) wins; among the rest the most
+    stars wins, ties go to the repo name that sorts first."""
     best: dict[str, dict] = {}
     notes: list[str] = []
-    for e in sorted(entries, key=lambda e: (-e["stars"], e["repo"].lower())):
+    for e in list(preferred or []) + sorted(entries, key=lambda e: (-e["stars"], e["repo"].lower())):
         if e["id"] in best:
-            notes.append(f"{e['repo']}: id {e['id']} is already listed from {best[e['id']]['repo']}")
+            notes.append(f"{where(e)}: id {e['id']} is already listed from {where(best[e['id']])}")
         else:
             best[e["id"]] = e
     return sorted(best.values(), key=lambda e: (-e["stars"], e["id"])), notes
@@ -301,7 +337,7 @@ def validate_index(doc: object) -> list[str]:
     if not isinstance(doc["plugins"], list):
         return errs + ["plugins must be a list"]
     required = {"id", "name", "version", "description", "repo", "ref", "sha", "permissions", "runtime", "license", "stars", "updated"}
-    optional = {"homepage"}
+    optional = {"homepage", "path"}
     seen = set()
     for i, p in enumerate(doc["plugins"]):
         where = f"plugins[{i}]"
@@ -318,6 +354,8 @@ def validate_index(doc: object) -> list[str]:
             errs.append(f"{where}.sha")
         if not (isinstance(p["repo"], str) and REPO_RE.match(p["repo"])):
             errs.append(f"{where}.repo")
+        if "path" in p and not valid_subpath(p["path"]):
+            errs.append(f"{where}.path")
         for k in ("name", "version", "description", "ref", "runtime", "license", "updated"):
             if not isinstance(p[k], str):
                 errs.append(f"{where}.{k}")
@@ -436,10 +474,14 @@ class _TarWatch(_Cap):
         self.collected = bytearray()
 
 
-def manifest_from_tarball(fileobj, *, max_unpacked: int = MAX_UNPACKED, max_download: int = MAX_TARBALL) -> bytes | None:
-    """`<top>/meetko.toml` from a .tar.gz stream, or None when there is none. This is what a user
-    who installs that commit gets, so it is the file the index must describe. Streamed through
-    size caps and never extracted: only that one regular file is read, up to 64 KB."""
+def manifest_from_tarball(fileobj, path: str = "", *, max_unpacked: int = MAX_UNPACKED, max_download: int = MAX_TARBALL) -> bytes | None:
+    """`<top>/meetko.toml` (or `<top>/<path>/meetko.toml`) from a .tar.gz stream, or None when there
+    is none. This is what a user who installs that commit gets, so it is the file the index must
+    describe. Streamed through size caps and never extracted: only that one regular file is read,
+    up to 64 KB."""
+    if path and not valid_subpath(path):
+        raise Rejected("the folder path is malformed")
+    want = (path.split("/") if path else []) + ["meetko.toml"]
     gz = gzip.GzipFile(fileobj=io.BufferedReader(_Cap(fileobj, max_download, "the download")), mode="rb")
     stream = io.BufferedReader(_TarWatch(gz, max_unpacked, "the unpacked archive"))
     found: bytes | None = None
@@ -449,7 +491,7 @@ def manifest_from_tarball(fileobj, *, max_unpacked: int = MAX_UNPACKED, max_down
                 if count > MAX_MEMBERS:
                     raise Rejected(f"the archive has more than {MAX_MEMBERS} entries")
                 parts = [p for p in member.name.split("/") if p not in ("", ".")]
-                if len(parts) != 2 or parts[1] != "meetko.toml":
+                if parts[1:] != want:
                     continue
                 if not member.isreg():
                     raise Rejected("meetko.toml is not a regular file")
@@ -521,14 +563,14 @@ class GitHub:
         sha = body.decode("ascii", "replace").strip().lower()
         return sha if status == 200 and SHA_RE.match(sha) else None
 
-    def manifest(self, full: str, sha: str) -> str | None:
-        """meetko.toml as it is INSIDE the tarball of `sha` (not the Contents API's raw file: the
-        archive applies export-subst). No token is sent to the download host."""
+    def manifest(self, full: str, sha: str, path: str = "") -> str | None:
+        """meetko.toml (of the folder `path`, if given) as it is INSIDE the tarball of `sha` (not the
+        Contents API's raw file: the archive applies export-subst). No token is sent to the download host."""
         url = f"{self.codeload}/{full}/tar.gz/{sha}"
         req = urllib.request.Request(url, headers={"User-Agent": "meetko-plugin-index"})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
-                data = manifest_from_tarball(r)
+                data = manifest_from_tarball(r, path)
         except urllib.error.HTTPError as e:
             raise Rejected(f"cannot download the source ({e.code})") from None
         except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -541,41 +583,88 @@ class GitHub:
             raise Rejected("meetko.toml is not UTF-8") from None
 
 
-def index_repo(gh: GitHub, repo: dict) -> dict:
+def index_repo(gh: GitHub, repo: dict, path: str = "", ref: str | None = None) -> dict:
+    """One entry: `repo` is GitHub's repo object; `path` a folder in it; `ref` a pinned tag or
+    commit (else the latest release tag, else the default branch)."""
     full = repo["full_name"]
     if repo.get("archived") or repo.get("disabled") or repo.get("fork") or repo.get("private"):
         raise Rejected("archived, disabled, private or a fork")
     if not isinstance(full, str) or not REPO_RE.match(full):
         raise Rejected("repo name is malformed")
     owner = full.split("/")[0]
-    tag = gh.latest_release_tag(full)
-    ref = tag or repo.get("default_branch") or "main"
+    if path and not valid_subpath(path):
+        raise Rejected("the folder path is malformed")
+    if ref is None:
+        ref = gh.latest_release_tag(full) or repo.get("default_branch") or "main"
     sha = gh.resolve(full, ref)
     if not sha:
         raise Rejected(f"cannot resolve {ref!r}")
-    text = gh.manifest(full, sha)
+    text = gh.manifest(full, sha, path) if path else gh.manifest(full, sha)
     if text is None:
-        raise Rejected("no meetko.toml at the repository root")
-    return make_entry(repo, ref, sha, validate_manifest(text, owner))
+        raise Rejected(f"no meetko.toml in {path}/" if path else "no meetko.toml at the repository root")
+    return make_entry(repo, ref, sha, validate_manifest(text, owner), path)
 
 
-def build(gh: GitHub, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> tuple[dict, list[str]]:
-    entries, notes = [], []
-    for repo in gh.search_repos():
+CATALOG = "Eastsidegunn/meetko-plugins"
+
+
+def load_sources(text: str, catalog: str = CATALOG) -> list[dict]:
+    """The sources file: {"plugins": [{"repo": "OWNER/REPO", "path"?: "FOLDER", "ref"?: "TAG"}]}.
+    `ref` may be left out only for rows of the `catalog` repository itself.
+    Raises FetchFailed for a malformed file (the run must not publish a list without it)."""
+    try:
+        doc = json.loads(text)
+    except ValueError as e:
+        raise FetchFailed(f"the sources file is not JSON: {e}") from None
+    rows = doc.get("plugins") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise FetchFailed("the sources file needs a \"plugins\" list")
+    out, seen = [], set()
+    for i, r in enumerate(rows):
+        ok = isinstance(r, dict) and set(r) <= {"repo", "path", "ref"} and isinstance(r.get("repo"), str) and REPO_RE.match(r["repo"])
+        ok = ok and ("path" not in r or valid_subpath(r["path"]))
+        ok = ok and ("ref" not in r or (isinstance(r["ref"], str) and 0 < len(r["ref"]) <= 200 and not r["ref"].startswith(("pull/", "refs/", "-"))))
+        if not ok:
+            raise FetchFailed(f"sources plugins[{i}] is malformed (repo OWNER/REPO, optional path and ref)")
+        if "ref" not in r and r["repo"].lower() != catalog.lower():
+            raise FetchFailed(f"sources plugins[{i}] ({r['repo']}) needs a ref: a release tag or a commit sha (only {catalog}'s own rows may follow its default branch)")
+        key = (r["repo"].lower(), r.get("path", ""))
+        if key in seen:
+            raise FetchFailed(f"sources plugins[{i}] repeats {r['repo']} {r.get('path', '')}")
+        seen.add(key)
+        out.append({"repo": r["repo"], "path": r.get("path", ""), "ref": r.get("ref")})
+    return out
+
+
+def build(gh: GitHub, now: Callable[[], datetime] = lambda: datetime.now(timezone.utc), sources: list[dict] | None = None, search: bool = True) -> tuple[dict, list[str]]:
+    entries, listed, notes = [], [], []
+    for src in sources or []:
+        label = f"{src['repo']}/{src['path']}" if src["path"] else src["repo"]
+        try:
+            repo = gh.json(f"/repos/{src['repo']}")
+            if not isinstance(repo, dict) or not isinstance(repo.get("full_name"), str):
+                raise Rejected("repository not found")
+            listed.append(index_repo(gh, repo, src["path"], src["ref"]))
+        except Rejected as e:
+            notes.append(f"skipped {label}: {e}")
+        except Exception as e:  # one broken source must not take the whole run down
+            notes.append(f"skipped {label}: unexpected {type(e).__name__}")
+    for repo in gh.search_repos() if search else []:
         try:
             entries.append(index_repo(gh, repo))
         except Rejected as e:
             notes.append(f"skipped {repo.get('full_name')}: {e}")
         except Exception as e:  # one hostile or broken repo must not take the whole run down
             notes.append(f"skipped {repo.get('full_name')}: unexpected {type(e).__name__}")
-    plugins, dup = dedupe(entries)
+    plugins, dup = dedupe(entries, listed)
     doc = {"generated": now().strftime("%Y-%m-%dT%H:%M:%SZ"), "plugins": plugins}
     return doc, notes + dup
 
 
 def apply_blocklist(doc: dict, lines: list[str]) -> dict:
     """Drop entries named by the blocklist. Lines (comments after #, case-insensitive):
-    `OWNER/REPO`, `OWNER/*` (every repo of an owner), or a 40-hex commit sha."""
+    `OWNER/REPO` (the repo and every folder in it), `OWNER/REPO/FOLDER` (one folder),
+    `OWNER/*` (every repo of an owner), or a 40-hex commit sha."""
     repos, owners, shas = set(), set(), set()
     for line in lines:
         item = line.split("#")[0].strip().lower()
@@ -590,7 +679,7 @@ def apply_blocklist(doc: dict, lines: list[str]) -> dict:
 
     def blocked(p: dict) -> bool:
         repo = p["repo"].lower()
-        return repo in repos or repo.split("/")[0] in owners or p["sha"] in shas
+        return repo in repos or where(p).lower() in repos or repo.split("/")[0] in owners or p["sha"] in shas
 
     return {**doc, "plugins": [p for p in doc["plugins"] if not blocked(p)]}
 
@@ -609,9 +698,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--previous", help="the index published before; a run that loses more than half of it fails")
     ap.add_argument("--blocklist", help="file with OWNER/REPO, OWNER/* or commit sha per line")
     ap.add_argument("--allow-shrink", action="store_true", help="accept an index with less than half of the previous plugins")
+    ap.add_argument("--sources", help="sources.json: plugins listed by pull request (repo, optional path and ref)")
+    ap.add_argument("--no-search", action="store_true", help="list only the sources file, not the meetko-plugin topic search")
+    ap.add_argument("--catalog", default=CATALOG, help="OWNER/REPO whose own sources rows may leave out ref")
     args = ap.parse_args(argv)
     try:
-        doc, notes = build(GitHub(os.environ.get("GITHUB_TOKEN") or None))
+        sources = None
+        if args.sources:
+            with open(args.sources, encoding="utf-8") as f:
+                sources = load_sources(f.read(), args.catalog)
+        doc, notes = build(GitHub(os.environ.get("GITHUB_TOKEN") or None), sources=sources, search=not args.no_search)
     except FetchFailed as e:
         print(f"failed, nothing written: {e}", file=sys.stderr)
         return 1

@@ -1,4 +1,5 @@
-//! Installing a plugin from a source spec: `github:OWNER/REPO@REF`.
+//! Installing a plugin from a source spec: `github:OWNER/REPO@REF`, or a subfolder of a repo with
+//! `github:OWNER/REPO/SUB/PATH@REF` (only that folder is taken from the archive).
 //!
 //! Network happens only when this is called (an explicit command, never in the background).
 //! The flow: resolve REF to a full commit sha over HTTPS, download that commit's tarball,
@@ -39,26 +40,54 @@ pub struct PluginSource {
     pub reference: String,
 }
 
-/// A parsed `github:OWNER/REPO@REF`.
+/// a subfolder path: at most this many segments and this many bytes
+pub const MAX_SUBPATH_DEPTH: usize = 8;
+pub const MAX_SUBPATH_LEN: usize = 200;
+
+/// A parsed `github:OWNER/REPO@REF` or `github:OWNER/REPO/SUB/PATH@REF`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceSpec {
     pub owner: String,
     pub repo: String,
+    /// the plugin's folder inside the repo (`a/b`, validated by `valid_subpath`); `None` = the root
+    pub path: Option<String>,
     pub reference: String,
+}
+
+/// A subfolder path as written after `OWNER/REPO/`: 1-8 segments joined by `/`, at most 200 bytes.
+/// Each segment uses the characters GitHub allows in owner and repo names (ASCII letters, digits,
+/// `.`, `_`, `-`), does not start with `.` (so no `.`, `..` or hidden folders) and is a name every
+/// OS can hold (`portable_name`). No empty segments, so no leading, trailing or doubled `/`, and no
+/// backslashes. Matching against the archive is exact (Git paths are case-sensitive).
+pub fn valid_subpath(path: &str) -> bool {
+    let segs: Vec<&str> = path.split('/').collect();
+    !path.is_empty()
+        && path.len() <= MAX_SUBPATH_LEN
+        && segs.len() <= MAX_SUBPATH_DEPTH
+        && segs.iter().all(|s| s.len() <= 100 && !s.starts_with('.') && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) && portable_name(s))
 }
 
 impl SourceSpec {
     /// `Ok(None)` when the text is not a `github:` spec (it is a local path then).
     pub fn parse(text: &str) -> Result<Option<SourceSpec>> {
         let Some(rest) = text.strip_prefix("github:") else { return Ok(None) };
-        let bad = |why: &str| Error::Plugin(format!("{text:?}: {why}; expected github:OWNER/REPO@REF"));
+        let bad = |why: &str| Error::Plugin(format!("{text:?}: {why}; expected github:OWNER/REPO@REF or github:OWNER/REPO/FOLDER@REF"));
         let (path, reference) = rest.split_once('@').ok_or_else(|| bad("a tag or full commit sha is required after @"))?;
-        let (owner, repo) = path.split_once('/').ok_or_else(|| bad("missing OWNER/REPO"))?;
+        let (owner, after) = path.split_once('/').ok_or_else(|| bad("missing OWNER/REPO"))?;
+        let (repo, sub) = match after.split_once('/') {
+            Some((r, s)) => (r, Some(s)),
+            None => (after, None),
+        };
         let name_ok = |s: &str| {
             !s.is_empty() && s.len() <= 100 && !s.starts_with('.') && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
         };
         if !name_ok(owner) || !name_ok(repo) {
             return Err(bad("owner or repo has characters GitHub does not allow"));
+        }
+        if let Some(s) = sub {
+            if !valid_subpath(s) {
+                return Err(bad("the folder path must be up to 8 plain names (letters, digits, . _ -; not starting with .) joined by /, at most 200 characters"));
+            }
         }
         let ref_ok = !reference.is_empty()
             && reference.len() <= 200
@@ -70,11 +99,35 @@ impl SourceSpec {
         if !ref_ok {
             return Err(bad("the ref (tag or commit sha) has unsupported characters"));
         }
-        Ok(Some(SourceSpec { owner: owner.into(), repo: repo.into(), reference: reference.into() }))
+        Ok(Some(SourceSpec { owner: owner.into(), repo: repo.into(), path: sub.map(str::to_string), reference: reference.into() }))
     }
 
+    /// `github:OWNER/REPO`, or `github:OWNER/REPO/SUB/PATH` for a subfolder. This is the recorded
+    /// source (provenance, same-origin checks, the origin saved keys are bound to).
     pub fn repo_id(&self) -> String {
-        format!("github:{}/{}", self.owner, self.repo)
+        match &self.path {
+            Some(p) => format!("github:{}/{}/{p}", self.owner, self.repo),
+            None => format!("github:{}/{}", self.owner, self.repo),
+        }
+    }
+}
+
+/// The comparable form of a recorded source (`PluginSource::repo`): `github:owner/repo` lowercased
+/// (GitHub names are case-insensitive) followed by the folder exactly as written (Git paths are
+/// case-sensitive, so `Plugin/` and `plugin/` are different origins). For a repo-root source this
+/// is the whole string lowercased, the form keys and same-origin checks have always used.
+pub fn origin_key(repo: &str) -> String {
+    let rest = repo.strip_prefix("github:").unwrap_or(repo);
+    let mut it = rest.splitn(3, '/');
+    let (owner, name, path) = (it.next().unwrap_or(""), it.next(), it.next());
+    let head = match name {
+        Some(n) => format!("{owner}/{n}"),
+        None => owner.to_string(),
+    };
+    let prefix = if repo.starts_with("github:") { "github:" } else { "" };
+    match path {
+        Some(p) => format!("{prefix}{}/{p}", head.to_ascii_lowercase()),
+        None => format!("{prefix}{}", head.to_ascii_lowercase()),
     }
 }
 
@@ -302,7 +355,7 @@ pub fn fetch(ep: &Endpoints, spec: &SourceSpec) -> Result<Fetched> {
     let reader = resp.body_mut().with_config().limit(MAX_DOWNLOAD).reader();
     let tmp = tempfile::Builder::new().prefix("meetko-src-").tempdir()?;
     let dir = tmp.path().join("src");
-    extract_tar_gz(reader, &dir, &Limits::default())?;
+    extract_tar_gz_sub(reader, &dir, &Limits::default(), spec.path.as_deref())?;
     Ok(Fetched { _tmp: tmp, dir, source: PluginSource { repo: spec.repo_id(), sha, reference: spec.reference.clone() } })
 }
 
@@ -470,6 +523,19 @@ impl<R: Read> Read for Guard<R> {
 /// over the size, entry-count or depth limits, names Windows cannot hold, and streams that
 /// inflate past the cap. File modes are normalised to 0644/0755.
 pub fn extract_tar_gz(reader: impl Read, dest: &Path, limits: &Limits) -> Result<()> {
+    extract_tar_gz_sub(reader, dest, limits, None)
+}
+
+/// `extract_tar_gz`, taking only the entries under `sub` (a `valid_subpath`, relative to the
+/// archive's top directory) and writing them with that prefix removed. Every entry still counts
+/// toward the entry cap and every path is still checked for absolute and `..` parts; entries
+/// outside the folder are skipped without being written. The folder must be in the archive.
+pub fn extract_tar_gz_sub(reader: impl Read, dest: &Path, limits: &Limits, sub: Option<&str>) -> Result<()> {
+    let sub: Vec<std::ffi::OsString> = match sub {
+        Some(s) if !valid_subpath(s) => return Err(Error::Plugin("the folder path is not valid".into())),
+        Some(s) => s.split('/').map(Into::into).collect(),
+        None => Vec::new(),
+    };
     if dest.exists() {
         return Err(Error::Plugin("extraction target already exists".into()));
     }
@@ -477,7 +543,7 @@ pub fn extract_tar_gz(reader: impl Read, dest: &Path, limits: &Limits) -> Result
     let verdict = std::rc::Rc::new(std::cell::RefCell::new(None));
     let cap = limits.max_bytes.saturating_add(STREAM_SLACK);
     let guard = Guard { inner: flate2::read::GzDecoder::new(reader), left: cap, cap, block: [0; 512], filled: 0, skip: 0, data_left: 0, collecting: false, collected: Vec::new(), verdict: verdict.clone() };
-    let result = extract_entries(guard, dest, limits);
+    let result = extract_entries(guard, dest, limits, &sub);
     let why = verdict.borrow_mut().take();
     match (result, why) {
         (Err(_), Some(why)) => Err(Error::Plugin(why)),
@@ -485,9 +551,9 @@ pub fn extract_tar_gz(reader: impl Read, dest: &Path, limits: &Limits) -> Result
     }
 }
 
-fn extract_entries(stream: impl Read, dest: &Path, limits: &Limits) -> Result<()> {
+fn extract_entries(stream: impl Read, dest: &Path, limits: &Limits, sub: &[std::ffi::OsString]) -> Result<()> {
     let mut archive = tar::Archive::new(stream);
-    let (mut total, mut seen) = (0u64, 0usize);
+    let (mut total, mut seen, mut found) = (0u64, 0usize, sub.is_empty());
     let entries = archive.entries().map_err(|e| Error::Plugin(format!("not a readable tar.gz: {e}")))?;
     for entry in entries {
         let mut entry = entry.map_err(|e| Error::Plugin(format!("reading the archive: {e}")))?;
@@ -501,9 +567,6 @@ fn extract_entries(stream: impl Read, dest: &Path, limits: &Limits) -> Result<()
         if kind.is_pax_global_extensions() || kind.is_pax_local_extensions() {
             continue; // metadata about the archive (GitHub puts the commit sha in one), not a file
         }
-        if !(kind.is_file() || kind.is_dir()) {
-            return Err(refuse(&raw, "only regular files and directories are allowed (no links or device files)"));
-        }
         let mut parts = Vec::new();
         for c in raw.components() {
             match c {
@@ -511,6 +574,25 @@ fn extract_entries(stream: impl Read, dest: &Path, limits: &Limits) -> Result<()
                 Component::CurDir => {}
                 _ => return Err(refuse(&raw, "absolute or parent path")),
             }
+        }
+        if !sub.is_empty() {
+            // a subfolder install: only entries strictly inside <top>/<sub> are taken; the folder
+            // itself must be a directory; anything else is skipped and never written
+            if parts.len() < 1 + sub.len() || parts[1..=sub.len()] != *sub {
+                continue;
+            }
+            if parts.len() == 1 + sub.len() {
+                if !kind.is_dir() {
+                    return Err(refuse(&raw, "the plugin folder is not a directory"));
+                }
+                found = true;
+                continue;
+            }
+            found = true;
+            parts.drain(1..=sub.len());
+        }
+        if !(kind.is_file() || kind.is_dir()) {
+            return Err(refuse(&raw, "only regular files and directories are allowed (no links or device files)"));
         }
         if parts.is_empty() {
             continue;
@@ -548,6 +630,9 @@ fn extract_entries(stream: impl Read, dest: &Path, limits: &Limits) -> Result<()
         std::io::copy(&mut (&mut entry).take(size), &mut f)?;
         drop(f);
         set_mode(&out, exec)?;
+    }
+    if !found {
+        return Err(Error::Plugin("the plugin folder is not in the downloaded source".into()));
     }
     Ok(())
 }
@@ -611,6 +696,9 @@ pub struct GalleryEntry {
     pub description: String,
     /// OWNER/REPO
     pub repo: String,
+    /// the plugin's folder inside the repo (`valid_subpath`); empty = the repo root
+    #[serde(default)]
+    pub path: String,
     #[serde(rename = "ref")]
     pub reference: String,
     /// the commit the entry was read at; installs pin it
@@ -629,7 +717,12 @@ pub struct GalleryEntry {
 impl GalleryEntry {
     /// The spec this entry installs from: always the pinned commit, never a moving tag.
     pub fn spec(&self) -> Result<SourceSpec> {
-        SourceSpec::parse(&format!("github:{}@{}", self.repo, self.sha))?.ok_or_else(|| Error::Plugin("bad gallery entry".into()))
+        let at = if self.path.is_empty() { self.repo.clone() } else { format!("{}/{}", self.repo, self.path) };
+        // `repo` must be exactly OWNER/REPO: a folder belongs in `path`, never smuggled into `repo`
+        if self.repo.matches('/').count() != 1 {
+            return Err(Error::Plugin("bad gallery entry".into()));
+        }
+        SourceSpec::parse(&format!("github:{at}@{}", self.sha))?.ok_or_else(|| Error::Plugin("bad gallery entry".into()))
     }
 
     /// Shape checks on a row of a file anyone may have tampered with: the id looks like a manifest

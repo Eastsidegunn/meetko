@@ -1,10 +1,11 @@
+# Test fixture: declares network, API keys and settings like an AI plugin, and does one request.
 [package]
-id = "meetko/summary-py"
+id = "meetko/secrets-fixture"
 version = "0.1.0"
 kind = "plugin"
 contract = "0.1"
 license = "AGPL-3.0-or-later"
-description = "회의 내용을 AI로 요약하고 할 일과 결정 사항을 뽑아줘요 (대화 텍스트가 선택한 AI 서비스로 전송돼요)"
+description = "test fixture: one chat completions request with the declared key"
 
 [run]
 command = ["python3", "-I", "-S", "plugin.py"]
@@ -13,11 +14,11 @@ protocol = "stdio-jsonrpc"
 [input]
 transcript = true
 speakers = true
-meeting = true
+meeting = false
 audio = "none"
 
 [output]
-display = ["summary_card", "action_items", "timeline_marker"]
+display = ["summary_card"]
 
 [permissions]
 network = true

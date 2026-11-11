@@ -87,7 +87,7 @@ export interface PluginInfo {
   display: string[]; code_sha256: string; manifest_sha256: string; folder: string; notice: string;
   /** true when this build runs plugins in the OS sandbox (macOS) */
   isolated: boolean;
-  /** "github:OWNER/REPO @ ref (commit)" for a plugin that came from the network, else null */
+  /** "github:OWNER/REPO[/FOLDER] @ ref (commit)" for a plugin that came from the network, else null */
   source: string | null;
   /** set when adding would overwrite an installed plugin with the same id from a different source */
   replaces: { key: string; version: string; source: string | null } | null;
@@ -97,6 +97,8 @@ export interface PluginInfo {
 /** One row of the gallery index: what the repo declares, not a review. */
 export interface GalleryEntry {
   id: string; name: string; version: string; description: string; repo: string; ref: string; sha: string;
+  /** the plugin's folder inside the repo; empty for a plugin at the repo root */
+  path?: string;
   permissions: { network: boolean; audio: boolean; secrets?: string[]; settings?: string[] }; runtime: string; license: string; stars: number; updated: string;
 }
 /** One declared key or setting of an installed plugin. A key's value never comes back; a setting's does. */

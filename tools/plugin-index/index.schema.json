@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "meetko plugin gallery index",
-  "description": "Written by tools/plugin-index/build_index.py. A convenience listing of GitHub repos tagged meetko-plugin; it is not a review or an endorsement.",
+  "description": "Written by tools/plugin-index/build_index.py. A convenience listing of plugins named in the catalog's sources file (and, optionally, GitHub repos tagged meetko-plugin); it is not a review or an endorsement.",
   "type": "object",
   "additionalProperties": false,
   "required": ["generated", "plugins"],
@@ -20,6 +20,7 @@
         "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.+-]+)?$" },
         "description": { "type": "string", "minLength": 1, "maxLength": 300 },
         "repo": { "type": "string", "description": "OWNER/REPO on github.com", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$" },
+        "path": { "type": "string", "description": "the plugin's folder in the repo (absent: the repo root); installed as github:OWNER/REPO/PATH@SHA. 1-8 segments, at most 200 characters, no ., .. or hidden folders", "maxLength": 200, "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}(/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}){0,7}$" },
         "ref": { "type": "string", "description": "latest release tag, else the default branch name" },
         "sha": { "type": "string", "description": "full commit the entry was read at; installs pin this", "pattern": "^[0-9a-f]{40}$" },
         "permissions": {

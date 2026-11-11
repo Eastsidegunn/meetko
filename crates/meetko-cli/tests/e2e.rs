@@ -155,7 +155,7 @@ fn import_transcribe_plugin_approve_stale_export() {
     let export_ctm = env.ok(&["export", &draft, "--format", "ctm", "--channel", "0"]);
     assert!(export_ctm.contains(" 1 0.200 "), "{export_ctm}");
 
-    let plugin_dir = root().join("plugins/action-items-py");
+    let plugin_dir = root().join("tests/fixtures/plugins/action-items-py");
     // adding needs consent
     let (_, err, ok) = env.meetko(&["plugin", "add", plugin_dir.to_str().unwrap()]);
     assert!(!ok && err.contains("--yes") && err.contains("sandbox"), "{err}");

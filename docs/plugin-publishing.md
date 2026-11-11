@@ -1,19 +1,19 @@
 # 플러그인 게시와 설치
 
-2026-10-31 · meetko 플러그인은 심사 없이 퍼진다. 만든 사람이 GitHub에 올리고 태그를 달면 목록에 나타나고, 쓰는 사람은 커밋에 고정해서 설치한다. 허가를 받아야 하는 PR은 없다.
+2026-10-31, 2026-11-12 개정 · meetko 플러그인은 만든 사람의 GitHub 저장소에 산다. 앱의 둘러보기 목록에 올리려면 목록 저장소 [`Eastsidegunn/meetko-plugins`](https://github.com/Eastsidegunn/meetko-plugins)의 `sources.json`에 한 줄을 더하는 PR을 보낸다. 목록에 없어도 누구나 GitHub 주소로 설치할 수 있고, 설치는 언제나 커밋에 고정된다.
 
-*English summary:* anyone can publish a meetko plugin by pushing a GitHub repo with the topic `meetko-plugin` and a `meetko.toml` at the root. A daily job lists such repos in a gallery index; users install with `meetko plugin install github:OWNER/REPO@REF`, which pins the exact commit. Nothing is built at install time and nobody reviews the code.
+*English summary:* a plugin lives in its author's public GitHub repo, with `meetko.toml` at the repo root or in a folder of the repo. To appear in the app's browser, open a pull request on the catalog repo `Eastsidegunn/meetko-plugins` adding a row to `sources.json` (`{"repo": "OWNER/REPO", "ref": "v1.0.0"}`, plus `"path": "FOLDER"` for a plugin in a subfolder; `ref`, a release tag or commit sha, is required); a workflow there rebuilds `index.json` and pins each entry to a commit. Users install with `meetko plugin install github:OWNER/REPO@REF` or `github:OWNER/REPO/FOLDER@REF` (only that folder is installed), pinned to the exact commit. Nothing is built at install time, and being listed is not a code review. The official examples are folders of the catalog repo itself.
 
 ## 플러그인 만들기 (게시하는 쪽)
 
 1. GitHub 저장소를 만든다. 공개 저장소여야 한다.
-2. 저장소 **루트**에 `meetko.toml`을 둔다. 형식은 [manifest-draft.md](manifest-draft.md)를 따른다. 목록에 오르려면 아래가 필요하다.
+2. 저장소 **루트**나 저장소 안의 **폴더**에 `meetko.toml`을 둔다(플러그인 하나에 폴더 하나; 폴더에 두면 그 폴더만 설치된다). 형식은 [manifest-draft.md](manifest-draft.md)를 따른다. 목록에 오르려면 아래가 필요하다.
    - `package.id = "<게시자>/<이름>"`(소문자, 숫자, `.` `_` `-`, 각 부분 64자 이내). **게시자는 저장소 소유자 이름과 같아야 한다**(대소문자 무시). `acme/summary`는 `github.com/acme/...`에서만 올라가고, `meetko plugin install`과 앱 설치도 같은 규칙을 **설치할 때** 다시 검사한다(게시자 부분이 없거나 id 형식이 아니면 GitHub 설치가 거부된다). 매니페스트 문자열(id, 버전, 설명 등)에 제어 문자와 방향·보이지 않는 서식 문자가 있으면 파싱 단계에서 거부한다. 남의 이름을 쓸 수 없게 하는 최소한의 장치다.
    - `version`은 semver(`1.2.3`), `kind = "plugin"`, `contract = "0.1"`, `run.protocol = "stdio-jsonrpc"`.
    - `description`은 한 줄(300자 이내, 줄바꿈·제어 문자·방향 바꾸는 문자 금지). `license`, `homepage`(https)는 선택.
    - 필요한 권한을 정직하게 선언한다: `permissions.network`, `input.audio`, 그리고 API 키를 쓴다면 `permissions.secrets`(키 이름만, `_KEY`/`_TOKEN`/`_SECRET`으로 끝남, 최대 4개)와 필요하면 `permissions.settings`(모델 이름·서버 주소, `_MODEL`/`_BASE_URL`로 끝남, 최대 4개). 둘 다 `network = true`가 필요하다([manifest-draft.md](manifest-draft.md)). 키 값을 저장소나 매니페스트에 넣지 않는다. 사용자가 자기 키를 넣는다.
-3. 저장소 **topic**에 `meetko-plugin`을 추가한다(저장소 첫 화면 오른쪽 톱니바퀴).
-4. 버전을 낼 때 **release(태그)**를 만든다. 목록은 최신 release 태그를 기준으로 하고, release가 없으면 기본 브랜치의 최신 커밋을 쓴다.
+3. 버전을 낼 때 **release(태그)**를 만든다. 목록은 `sources.json`에 적은 `ref`(태그 또는 커밋 sha)를 쓴다.
+4. **목록에 올리기:** [`Eastsidegunn/meetko-plugins`](https://github.com/Eastsidegunn/meetko-plugins)에 `sources.json`의 `plugins`에 한 줄을 더하는 PR을 보낸다. 루트에 있는 플러그인은 `{"repo": "OWNER/REPO", "ref": "v1.2.0"}`, 폴더에 있으면 `"path": "FOLDER"`를 더한다. **`ref`(release 태그 또는 40자 커밋 sha)는 꼭 적는다.** PR에서 본 버전에 목록이 묶이도록, 기본 브랜치를 따라가는 줄은 받지 않는다(목록 저장소 자신의 예제 줄만 예외). 새 버전은 `ref`를 바꾸는 PR로 올린다. PR에서는 형식(저장소 이름, 폴더 경로 규칙, 게시자 = 소유자)만 확인하고, 합쳐지면 목록 저장소의 워크플로가 매니페스트를 그 커밋의 tarball에서 읽어 `index.json`을 다시 만든다. 코드를 검토하는 절차가 아니다.
 
 ### 설치할 때 빌드하지 않는다
 
@@ -31,10 +31,15 @@ meetko는 설치 중에 `cargo`, `npm`, `pip` 같은 것을 **실행하지 않�
 ## 설치하기 (쓰는 쪽)
 
 ```
-meetko plugin info    github:OWNER/REPO@v1.2.0    # 내려받아 매니페스트와 권한만 보여 준다. 설치하지 않는다
-meetko plugin install github:OWNER/REPO@v1.2.0    # 권한을 보여 주고 동의를 받은 뒤 설치한다
-meetko plugin install ./내-폴더                     # 로컬 폴더도 같다 (plugin add와 동일)
+meetko plugin info    github:OWNER/REPO@v1.2.0           # 내려받아 매니페스트와 권한만 보여 준다. 설치하지 않는다
+meetko plugin install github:OWNER/REPO@v1.2.0           # 권한을 보여 주고 동의를 받은 뒤 설치한다
+meetko plugin install github:OWNER/REPO/FOLDER@v1.2.0    # 저장소 안 폴더의 플러그인: 그 폴더만 설치한다
+meetko plugin install ./내-폴더                            # 로컬 폴더도 같다 (plugin add와 동일)
 ```
+
+- **폴더 형식** `github:OWNER/REPO/FOLDER@REF`: 매니페스트는 그 폴더에서 읽고, 내려받은 tarball에서 그 폴더 아래의 항목만 꺼낸다(폴더 이름은 떼고). 다른 항목은 디스크에 쓰지 않지만 항목 수 한도에는 들어가고, 꺼내는 항목에는 아래의 링크·크기·경로 검사가 그대로 적용된다. 폴더 경로는 `/`로 이은 이름 1~8개, 200자 이내이고, 각 이름은 영문자·숫자·`.` `_` `-`만 쓰며 `.`으로 시작하거나 끝나지 않고(`.`, `..`, 숨은 폴더 금지) Windows 예약 이름이 아니어야 한다. 빈 이름(`//`, 앞뒤 `/`), `\`, 절대 경로는 거부한다. 폴더 이름은 대소문자를 구분해 그대로 맞춘다(Git 경로이므로). 게시자 규칙은 같다: id의 앞부분은 저장소 소유자와 같아야 한다.
+- 내려받기와 압축 해제 한도(내려받는 크기 25MB, 항목 5000개 등)는 폴더가 아니라 **저장소 전체 tarball**에 적용되므로, 아주 큰 저장소 안의 폴더는 설치할 수 없다. 그런 플러그인은 자기 저장소로 옮긴다.
+- 출처 기록은 `github:OWNER/REPO/FOLDER`다. 소유자와 저장소 이름은 대소문자를 가리지 않고, 폴더 이름은 정확히 비교한다(`Plugin/`과 `plugin/`은 다른 출처). 같은 폴더의 새 커밋은 업데이트이고, 같은 저장소라도 다른 폴더나 저장소 루트에서 같은 id를 설치하면 다른 출처로 보고 아래의 `--replace` 확인이 필요하다(저장한 키도 넘어가지 않는다).
 
 - `REF`는 태그(권장) 또는 40자 전체 커밋 sha다. 브랜치 이름은 그 순간의 커밋으로 풀리지만, 아래 확인을 통과해야 한다(기본 브랜치가 아닌 브랜치의 끝은 보통 통과하지 못한다). `pull/…`, `refs/…` 이름은 받지 않는다(포크의 PR 커밋을 가리킬 수 있다). 7~39자의 16진수처럼 생긴 이름은 먼저 **태그/브랜치 이름**으로 풀고(짧은 sha로 취급하지 않는다), 아래 확인을 거친다.
 - **커밋이 정말 그 저장소의 것인지 확인한다.** GitHub는 전체 sha를 주면 같은 포크 네트워크의 *어느 포크*에서 온 커밋이든 부모 저장소 이름으로 내려 준다. 그래서 `github:acme/x@<sha>`가 acme의 코드라는 보장이 없다. meetko는 풀린 모든 커밋을 받기 전에 GitHub API로 확인하고, **기본 브랜치의 조상(또는 같은 커밋)이거나 저장소의 태그(주석 태그와 태그의 태그도 따라간다, 1000개까지)가 가리키는 커밋**일 때만 설치한다. 확인할 수 없으면 이유와 함께 거부한다. 그러므로 안전한 선택은 **릴리스 태그**이고, sha로 고정하려면 기본 브랜치에 들어간 커밋이나 태그된 커밋을 쓴다. 기본 브랜치에도 태그에도 없는 커밋(별도 브랜치 끝 등)은 설치되지 않는다.
@@ -43,14 +48,14 @@ meetko plugin install ./내-폴더                     # 로컬 폴더도 같다
 - 받은 파일은 기존 설치 경로를 그대로 지난다: 안전한 압축 해제, 검증된 복사, 선언된 권한 표시와 동의, manifest/코드 해시 기록. 이후 코드가 한 글자라도 바뀌면 실행되지 않는다.
 - 공개 저장소만 된다. GitHub 로그인 없이 호출하므로 같은 네트워크에서 시간당 요청이 많으면 잠시 거절될 수 있다. 설치 한 번에 API 요청이 몇 번(이름 풀이, 저장소 정보, 비교, 태그 목록) 나간다. 전체 sha로 설치해도 위의 소속 확인 때문에 요청이 생략되지 않는다.
 - **같은 id가 이미 다른 출처로 설치돼 있으면** 거부된다(다른 저장소, 또는 GitHub와 로컬 폴더의 차이). 정말 바꾸려면 `meetko plugin install ... --replace`(명령이 보여 준 `REPLACES:` 줄의 설치 상태에만 적용된다)(로컬 폴더는 `plugin add ... --replace`)로 명시한다. 앱에서는 이전 출처와 새 출처를 나란히 보여 주는 두 번째 확인이 나온다. 같은 저장소의 새 커밋은 업데이트이므로 플래그가 필요 없다. 로컬 폴더로 설치하면 이전의 GitHub 출처 기록은 지워진다.
-- **API 키를 쓰는 플러그인**은 설치 전에 "이 플러그인은 API 키(…)와 네트워크를 써요"라고 보여 준다. 키는 설치한 뒤 `meetko plugin secret set <id> <이름>`(값은 stdin, 예: `pbpaste | meetko plugin secret set meetko/summary-py ANTHROPIC_API_KEY`)이나 앱의 `API 키 넣기`로 넣고, `meetko plugin secret status <id>`로 넣었는지 확인할 수 있다(키 값은 다시 보이지 않고, 모델 이름 같은 설정은 보인다). 키는 플러그인 id와 **출처**에 묶인다. 다른 출처의 같은 id로 교체하면 키는 넘어가지 않고 지워진다. 같은 저장소의 업데이트는 키를 유지한다.
+- **API 키를 쓰는 플러그인**은 설치 전에 "이 플러그인은 API 키(…)와 네트워크를 써요"라고 보여 준다. 키는 설치한 뒤 `meetko plugin secret set <id> <이름>`(값은 stdin, 예: `pbpaste | meetko plugin secret set eastsidegunn/summary-py ANTHROPIC_API_KEY`)이나 앱의 `API 키 넣기`로 넣고, `meetko plugin secret status <id>`로 넣었는지 확인할 수 있다(키 값은 다시 보이지 않고, 모델 이름 같은 설정은 보인다). 키는 플러그인 id와 **출처**에 묶인다. 다른 출처의 같은 id로 교체하면 키는 넘어가지 않고 지워진다. 같은 저장소의 업데이트는 키를 유지한다.
 - 테스트나 사내 미러에서는 `MEETKO_GITHUB_API`, `MEETKO_GITHUB_CODELOAD`로 주소를 바꿀 수 있다. 앱의 목록 주소는 `MEETKO_PLUGIN_INDEX_URL`이다. 세 주소 모두 `https://`여야 하고, 평문 `http://`는 디버그 빌드이거나 `localhost`/`127.0.0.1`/`::1`일 때만 받는다. 릴리스 빌드는 그 밖의 http를 연결하지 않는다. 연결 제한 시간은 15초, 읽기 대기는 30초(느려도 흐르는 회선은 25MB 한도 안에서 끝낼 수 있다)이고 전체는 30분이다.
 
 앱에서는 플러그인 화면의 **둘러보기**에서 `목록 불러오기`를 눌러야 인터넷에 연결한다. `설치`를 누르면 앱이 받아 둔 목록의 그 항목이 고정한 커밋을 내려받아(화면은 저장소나 커밋을 직접 지정하지 못한다) 위와 같은 동의 창(선언된 권한, 해시, "검증되지 않았습니다")을 보여 주고, `추가`를 눌러야 설치된다. 내려받은 매니페스트의 id, 버전, 네트워크·오디오 권한, API 키·설정 이름 목록이 목록과 하나라도 다르면 미리보기 단계에서 거부한다. 미리보기마다 토큰이 붙고, 더 새 미리보기가 열렸으면 이전 창의 `추가`는 거부된다.
 
 ## 목록(갤러리)이 확인하는 것과 확인하지 않는 것
 
-`tools/plugin-index/build_index.py`가 하루 한 번 `meetko-plugin` topic 저장소를 찾아 `index.json`을 만든다(예시 워크플로: `tools/plugin-index/gallery-workflow.yml`. 목록 저장소 [`Eastsidegunn/meetko-plugins`](https://github.com/Eastsidegunn/meetko-plugins)에 복사해서 쓴다. 앱은 기본으로 `https://raw.githubusercontent.com/Eastsidegunn/meetko-plugins/main/index.json`을 읽는다). **Python 3.11 이상**이 필요하다(`tomllib`; 더 낮으면 안내 후 종료). 표준 라이브러리만 쓴다.
+`tools/plugin-index/build_index.py --sources sources.json --no-search`가 목록 저장소의 `sources.json`에 적힌 플러그인(저장소, 선택적으로 폴더, 고정할 `ref`)을 읽어 `index.json`을 만든다. `sources.json`이 main에 합쳐질 때와 하루 한 번 돈다(예시 워크플로: `tools/plugin-index/gallery-workflow.yml`. 목록 저장소 [`Eastsidegunn/meetko-plugins`](https://github.com/Eastsidegunn/meetko-plugins)에 복사해서 쓴다. 앱은 기본으로 `https://raw.githubusercontent.com/Eastsidegunn/meetko-plugins/main/index.json`을 읽는다). 폴더에 있는 플러그인의 항목에는 `path`가 붙고, 앱은 `github:OWNER/REPO/PATH@SHA`로 설치한다. `--no-search`를 빼면 `meetko-plugin` topic 저장소도 찾아 더한다(같은 id면 `sources.json` 쪽이 이긴다). **Python 3.11 이상**이 필요하다(`tomllib`; 더 낮으면 안내 후 종료). 표준 라이브러리만 쓴다.
 
 `meetko.toml`은 GitHub Contents API가 아니라 **그 커밋의 tarball 안에서** 읽는다. codeload tarball은 `git archive` 결과라서 `.gitattributes`의 `export-subst`가 적용되어 원본 파일과 다를 수 있고, 사용자가 설치하는 것은 tarball 쪽이기 때문이다. tarball은 크기 상한을 두고 스트리밍으로만 읽으며 디스크에 풀지 않는다. 앱도 설치 전에 내려받은 매니페스트를 목록과 다시 대조한다.
 
@@ -58,7 +63,8 @@ meetko plugin install ./내-폴더                     # 로컬 폴더도 같다
 
 - `meetko.toml`이 있고 파싱된다. 필수 필드, `kind`, `contract` 호환, 프로토콜, 실행 경로(절대 경로나 `..` 금지).
 - `permissions.secrets`/`settings`가 있으면 코어와 같은 규칙(이름 모양과 끝맺음, 예약 이름, 각각 최대 4개, `network = true`)을 검사하고, 목록 항목의 `permissions.secrets`/`settings`로 옮긴다(선언했을 때만 생기는 필드).
-- `package.id`의 게시자가 저장소 소유자와 같다. 같은 id는 별이 많은 저장소 하나만 오른다.
+- `package.id`의 게시자가 저장소 소유자와 같다. 같은 id는 하나만 오른다(`sources.json`의 앞줄, topic 검색끼리는 별이 많은 쪽).
+- 폴더 경로가 위의 규칙에 맞고, 그 폴더에 `meetko.toml`이 있다.
 - 매니페스트의 표가 표 모양인지, 문자열에 제어·방향 문자가 없는지. 저장소 하나의 매니페스트가 이상해도 그 저장소만 건너뛰고 나머지는 계속한다.
 - 보관됨(archived), 포크, 비공개 저장소는 제외한다.
 
@@ -71,10 +77,10 @@ meetko plugin install ./내-폴더                     # 로컬 폴더도 같다
 
 ## 나쁜 플러그인 신고
 
-목록 저장소(`Eastsidegunn/meetko-plugins`)의 GitHub issue로 저장소 주소, 커밋, 무엇이 문제인지(악성 동작, 사칭, 선언과 다른 권한 사용 등)를 적는다. 관리자는 목록에서 뺄 수 있다(`blocklist.txt`: 한 줄에 `OWNER/REPO`, 소유자 전체를 막는 `OWNER/*`, 또는 40자 커밋 sha). 이미 설치한 사람의 컴퓨터에서는 자동으로 지워지지 않는다. `meetko plugin list`로 출처를 확인할 수 있다. (제거 명령은 아직 없다.) 보안 취약점은 공개 issue 대신 저장소의 보안 연락 방법을 쓴다.
+목록 저장소(`Eastsidegunn/meetko-plugins`)의 GitHub issue로 저장소 주소, 커밋, 무엇이 문제인지(악성 동작, 사칭, 선언과 다른 권한 사용 등)를 적는다. 관리자는 `sources.json`에서 그 줄을 지우거나 `blocklist.txt`로 목록에서 뺄 수 있다(한 줄에 `OWNER/REPO`, 폴더 하나만 막는 `OWNER/REPO/FOLDER`, 소유자 전체를 막는 `OWNER/*`, 또는 40자 커밋 sha). 이미 설치한 사람의 컴퓨터에서는 자동으로 지워지지 않는다. `meetko plugin list`로 출처를 확인할 수 있다. (제거 명령은 아직 없다.) 보안 취약점은 공개 issue 대신 저장소의 보안 연락 방법을 쓴다.
 
 ## 목록 빌드 안전장치 (관리자용)
 
-- GitHub 검색이 200이 아니면 빌드가 **실패**한다(줄어든 목록을 커밋하지 않는다).
+- `sources.json`이 형식에 맞지 않거나(다른 사람 저장소의 줄에 `ref`가 없는 경우 포함) (topic 검색을 켰다면) GitHub 검색이 200이 아니면 빌드가 **실패**한다(줄어든 목록을 커밋하지 않는다). 개별 항목이 실패하면 그 항목만 이유와 함께 빠진다.
 - `--previous index.json`을 주면 새 목록의 플러그인이 이전의 절반보다 적을 때 실패한다. 의도한 변경이면 `--allow-shrink`.
 - 예시 워크플로는 읽기 전용 `build` 작업과, 만들어진 파일만 커밋하는 `commit` 작업으로 나뉜다. `build`는 읽기 전용 `GITHUB_TOKEN`을 받지만(API 한도 때문에 필요), 저장소 인증 정보는 남기지 않는다(`persist-credentials: false`). 쓰기 권한은 `commit`에만 있다. checkout과 setup-python은 커밋 sha로 고정했고(이 저장소의 CI와 같은 값), 아티팩트 액션 둘은 아직 태그라서 sha로 고정하는 TODO가 적혀 있다.

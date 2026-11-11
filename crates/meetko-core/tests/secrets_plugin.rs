@@ -1,6 +1,6 @@
-//! plugins/summary-py through the real host: installed, given its declared secrets from an
-//! in-memory store, run (under the macOS sandbox there) against a loopback OpenAI-compatible
-//! endpoint. No real network and no keychain.
+//! A plugin that declares API keys (tests/fixtures/plugins/secrets-py) through the real host:
+//! installed, given its declared secrets from an in-memory store, run (under the macOS sandbox
+//! there) against a loopback OpenAI-compatible endpoint. No real network and no keychain.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -38,13 +38,14 @@ fn store_with_draft() -> (tempfile::TempDir, Store, String) {
     let v = s.create_version(md).unwrap().version.id;
     (tmp, s, v)
 }
-/// The summary example end to end through the host (under the macOS sandbox there): the declared
+/// A key-declaring plugin end to end through the host (under the macOS sandbox there): the declared
 /// OPENAI_* secrets point it at a loopback OpenAI-compatible endpoint; the key reaches the endpoint
-/// as a Bearer token, anchors are real word ids, and the key the endpoint echoes back is redacted.
+/// as a Bearer token, and the key the endpoint echoes back is redacted by the host (the fixture
+/// returns it unredacted). Anchor checking of a real summary plugin is tested in its own repo.
 #[test]
-fn summary_plugin_runs_with_its_secrets_against_a_loopback_endpoint() {
+fn a_plugin_runs_with_its_secrets_against_a_loopback_endpoint() {
     let (_t, s, v) = store_with_draft();
-    s.install_plugin(&root().join("plugins/summary-py"), None).unwrap();
+    s.install_plugin(&root().join("tests/fixtures/plugins/secrets-py"), None).unwrap();
     let srv = tiny_http::Server::http("127.0.0.1:0").unwrap();
     let base = format!("http://{}/v1", srv.server_addr().to_ip().unwrap());
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
@@ -55,19 +56,12 @@ fn summary_plugin_runs_with_its_secrets_against_a_loopback_endpoint() {
             let mut body = String::new();
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
             log.lock().unwrap().push(format!("{} {} {auth}", req.method(), req.url()));
-            let model = serde_json::json!({
-                "one_line": {"text": format!("요약 (echo {KEY})"), "evidence": [["w00000", "w00010"]]},
-                "points": [{"text": "rollback 논의", "evidence": [["w00010", "w00040"]]}, {"text": "invented", "evidence": [["w99999", "w99999"]]}],
-                "decisions": [{"text": "롤백 문서화", "evidence": [["w00040", "w00050"]]}],
-                "actions": [{"text": "문서 작성", "owner": null, "due": null, "due_date": null, "evidence": [["w00050", "w00060"]]}],
-                "extra": []
-            });
-            let reply = serde_json::json!({"choices": [{"message": {"role": "assistant", "content": model.to_string()}}]});
+            let reply = serde_json::json!({"choices": [{"message": {"role": "assistant", "content": format!("요약 (echo {KEY})")}}]});
             let _ = req.respond(tiny_http::Response::from_string(reply.to_string()).with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()));
         }
     });
     let keys = MemoryStore::default();
-    let id = "meetko/summary-py";
+    let id = "meetko/secrets-fixture";
     secrets::set(&s, &keys, id, "OPENAI_API_KEY", KEY).unwrap();
     secrets::set(&s, &keys, id, "OPENAI_BASE_URL", &base).unwrap();
     secrets::set(&s, &keys, id, "OPENAI_MODEL", "test-model").unwrap();
@@ -76,9 +70,7 @@ fn summary_plugin_runs_with_its_secrets_against_a_loopback_endpoint() {
     let out = r.output.to_string();
     assert!(!out.contains(KEY), "{out}");
     assert!(out.contains("echo ***"), "{out}");
-    assert!(!out.contains("w99999") && !out.contains("invented"), "{out}");
-    let types: Vec<&str> = r.output["items"].as_array().unwrap().iter().map(|i| i["type"].as_str().unwrap()).collect();
-    assert!(types.contains(&"summary_card") && types.contains(&"action_items") && types.contains(&"timeline_marker"), "{types:?}");
+    assert_eq!(r.output["items"][0]["type"], "summary_card", "{out}");
     let seen = seen.lock().unwrap();
     assert_eq!(seen.len(), 1, "{seen:?}");
     assert_eq!(seen[0], format!("POST /v1/chat/completions Bearer {KEY}"));

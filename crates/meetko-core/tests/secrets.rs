@@ -284,7 +284,7 @@ fn a_plugin_without_secrets_never_touches_the_store() {
             panic!("delete")
         }
     }
-    let m = Manifest::load(&root().join("plugins/action-items-py")).unwrap().0;
+    let m = Manifest::load(&root().join("tests/fixtures/plugins/action-items-py")).unwrap().0;
     assert!(secrets::for_run(&Panics, "meetko/action-items-py", "local", &m).unwrap().is_empty());
 }
 
