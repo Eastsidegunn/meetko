@@ -18,6 +18,17 @@ pub fn reply(id: &Value, result: Result<Value, (i64, String)>) {
     }
 }
 
+/// The samples of a push (`pcm_s16le_b64`: base64 of mono PCM16 little-endian) as floats in
+/// [-1, 1). `None` for anything else, including half a sample: the sender broke the framing.
+pub fn decode_pcm(b64: &str) -> Option<Vec<f32>> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+    if bytes.len() % 2 != 0 {
+        return None;
+    }
+    Some(bytes.as_chunks::<2>().0.iter().map(|p| f32::from(i16::from_le_bytes(*p)) / 32768.0).collect())
+}
+
 extern "C" {
     fn _exit(code: i32) -> !;
 }

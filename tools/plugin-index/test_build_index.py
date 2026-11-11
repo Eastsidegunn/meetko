@@ -91,6 +91,45 @@ class Validate(unittest.TestCase):
             with self.assertRaises(bi.Rejected, msg=why):
                 bi.validate_manifest(text, "acme")
 
+    def test_secrets_and_settings_are_carried_and_checked(self):
+        with_keys = swap("network = true", 'network = true\nsecrets = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]\nsettings = ["ANTHROPIC_MODEL"]')
+        f = bi.validate_manifest(with_keys, "acme")
+        self.assertEqual(f["permissions"], {"network": True, "audio": True, "secrets": ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"], "settings": ["ANTHROPIC_MODEL"]})
+        none = bi.validate_manifest(swap("network = true", "network = true\nsecrets = []\nsettings = []"), "acme")["permissions"]
+        self.assertNotIn("secrets", none)
+        self.assertNotIn("settings", none)
+        bad = {
+            "no network": swap("network = true", 'network = false\nsecrets = ["API_KEY"]'),
+            "setting without network": swap("network = true", 'network = false\nsettings = ["A_MODEL"]'),
+            "lowercase": swap("network = true", 'network = true\nsecrets = ["api_key"]'),
+            "no key ending": swap("network = true", 'network = true\nsecrets = ["ANTHROPIC"]'),
+            "key as setting": swap("network = true", 'network = true\nsettings = ["A_API_KEY"]'),
+            "setting as key": swap("network = true", 'network = true\nsecrets = ["A_MODEL"]'),
+            "reserved": swap("network = true", 'network = true\nsecrets = ["PATH"]'),
+            "loader": swap("network = true", 'network = true\nsecrets = ["DYLD_INSERT_KEY"]'),
+            "openssl": swap("network = true", 'network = true\nsecrets = ["OPENSSL_KEY"]'),
+            "go": swap("network = true", 'network = true\nsecrets = ["GOPROXY_TOKEN"]'),
+            "npm": swap("network = true", 'network = true\nsecrets = ["NPM_CONFIG_TOKEN"]'),
+            "proxy": swap("network = true", 'network = true\nsecrets = ["HTTPS_PROXY"]'),
+            "twice": swap("network = true", 'network = true\nsecrets = ["A_KEY", "A_KEY"]'),
+            "too many": swap("network = true", 'network = true\nsecrets = ["A1_KEY", "A2_KEY", "A3_KEY", "A4_KEY", "A5_KEY"]'),
+            "not a list": swap("network = true", 'network = true\nsecrets = "API_KEY"'),
+            "not strings": swap("network = true", "network = true\nsecrets = [1]"),
+        }
+        for why, text in bad.items():
+            with self.assertRaises(bi.Rejected, msg=why):
+                bi.validate_manifest(text, "acme")
+        self.assertTrue(bi.valid_secret_name("GOOGLE_API_KEY"))
+        e = bi.make_entry(repo(), "v1", SHA, f)
+        self.assertEqual(bi.validate_index({"generated": "x", "plugins": [e]}), [])
+        ok = lambda perm: bi.validate_index({"generated": "x", "plugins": [{**e, "permissions": perm}]})
+        self.assertTrue(ok({"network": True, "audio": False, "secrets": []}))
+        self.assertTrue(ok({"network": True, "audio": False, "settings": []}))
+        self.assertTrue(ok({"network": False, "audio": False, "secrets": ["API_KEY"]}))
+        self.assertTrue(ok({"network": True, "audio": False, "secrets": ["path"]}))
+        self.assertTrue(ok({"network": True, "audio": False, "settings": ["A_API_KEY"]}))
+        self.assertEqual(ok({"network": True, "audio": False, "settings": ["A_MODEL"]}), [])
+
     def test_runtime_labels(self):
         self.assertEqual(bi._runtime(["target/release/x"]), "binary")
         self.assertEqual(bi._runtime(["node", "a.js"]), "node")
@@ -137,6 +176,8 @@ class Index(unittest.TestCase):
             return
         e = self.entry("acme/one", 1)
         jsonschema.validate({"generated": "2026-10-31T00:00:00Z", "plugins": [e]}, schema)
+        keyed = bi.make_entry(repo("acme/one", 1), "v1", SHA, bi.validate_manifest(swap("network = true", 'network = true\nsecrets = ["API_KEY"]\nsettings = ["A_MODEL"]'), "acme"))
+        jsonschema.validate({"generated": "2026-10-31T00:00:00Z", "plugins": [keyed]}, schema)
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate({"generated": "2026-10-31T00:00:00Z", "plugins": [{**e, "sha": "zz"}]}, schema)
 

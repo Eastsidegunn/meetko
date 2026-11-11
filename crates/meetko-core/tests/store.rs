@@ -62,7 +62,7 @@ fn versions_are_immutable_and_user_version_is_set() {
     assert!(conn.execute("UPDATE versions SET json='{}'", []).is_err());
     assert!(conn.execute("DELETE FROM versions", []).is_err());
     let v: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(v, 4); // 2 = result sandbox, 3 = plugin_sources, 4 = search_index
+    assert_eq!(v, 6); // 2 = result sandbox, 3 = plugin_sources, 4 = search_index, 5 = agent_provenance, 6 = overlays
     let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
     assert_eq!(mode, "wal");
     Store::open(&tmp.path().join("data")).unwrap(); // reopening migrates nothing
@@ -350,4 +350,77 @@ fn approving_an_old_draft_again_after_a_newer_approval_is_stale() {
     assert!(matches!(err, Error::StaleDraft(_)), "{err}");
     // approving the current head again is still idempotent
     assert_eq!(s.approve(&d2.version.id).unwrap().version.id, b.version.id);
+}
+
+fn agent_output(slot: &str, version_id: &str) -> Value {
+    json!({ "contract": "0.1", "plugin": { "id": slot, "version": "1" }, "input": { "version_id": version_id },
+        "items": [{ "type": "timeline_marker", "kind": "topic", "label": "x", "at": { "from": "w00000", "to": "w00001" } }] })
+}
+
+#[test]
+fn migration_5_adds_agent_provenance_to_a_version_4_database() {
+    let (tmp, s, m) = setup(16000);
+    let v = s.create_version(draft_for(&m)).unwrap().version.id;
+    let p = add_action_items(&s);
+    let out = json!({ "contract": "0.1", "plugin": { "id": p.id, "version": p.version }, "input": { "version_id": v }, "items": [] });
+    s.add_result(&p, &v, &out).unwrap();
+    drop(s);
+    // a database written by a build that knew migrations 1-4
+    let db = tmp.path().join("data/meetko.db");
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch("DROP TABLE agent_provenance; DROP TABLE speaker_overlays; DROP TABLE turn_edits; PRAGMA user_version = 4;").unwrap();
+    }
+    let s = Store::open(&tmp.path().join("data")).unwrap();
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let ver: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+    assert_eq!(ver, 6);
+    assert_eq!(s.results_for_version(&v).unwrap().len(), 1, "plugin results are untouched");
+    assert!(s.results_for_version(&v).unwrap()[0].agent.is_none());
+    let prov = json!({ "via": "mcp", "agent": { "name": "a" } });
+    s.put_agent_result("mcp:x", &prov, &v, &agent_output("mcp:x", &v)).unwrap();
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM agent_provenance", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn agent_provenance_stays_with_each_result_and_goes_with_the_last() {
+    let (tmp, s, m) = setup(16000);
+    let v1 = s.create_version(draft_for(&m)).unwrap().version.id;
+    let mut md = draft_for(&m);
+    md.words[5].text = "다른".into();
+    let v2 = s.create_version(md).unwrap().version.id;
+    let a = json!({ "via": "mcp", "agent": { "name": "A" } });
+    let b = json!({ "via": "mcp", "agent": { "name": "B" } });
+    s.put_agent_result("mcp:x", &a, &v1, &agent_output("mcp:x", &v1)).unwrap();
+    s.put_agent_result("mcp:x", &b, &v2, &agent_output("mcp:x", &v2)).unwrap();
+    assert_eq!(s.results_for_version(&v1).unwrap()[0].agent.as_ref().unwrap()["agent"]["name"], "A", "a later write to the id keeps the earlier record");
+    assert_eq!(s.results_for_version(&v2).unwrap()[0].agent.as_ref().unwrap()["agent"]["name"], "B");
+    assert_eq!(s.remove_agent_results("mcp:x", Some(&v1)).unwrap(), 1);
+    assert_eq!(s.results_for_version(&v2).unwrap()[0].agent.as_ref().unwrap()["agent"]["name"], "B");
+    assert_eq!(s.remove_agent_results("mcp:x", None).unwrap(), 1);
+    drop(s);
+    let conn = rusqlite::Connection::open(tmp.path().join("data/meetko.db")).unwrap();
+    let left: i64 = conn.query_row("SELECT COUNT(*) FROM agent_provenance", [], |r| r.get(0)).unwrap();
+    let slot: i64 = conn.query_row("SELECT COUNT(*) FROM plugins WHERE id='mcp:x'", [], |r| r.get(0)).unwrap();
+    assert_eq!((left, slot), (0, 0));
+}
+
+#[test]
+fn a_plugin_row_with_a_reserved_id_is_left_out_of_the_list() {
+    let (tmp, s, _m) = setup(16000);
+    add_action_items(&s);
+    // as an older build could have installed it
+    let conn = rusqlite::Connection::open(tmp.path().join("data/meetko.db")).unwrap();
+    conn.execute(
+        "INSERT INTO plugins (id, version, dir, manifest_json, manifest_sha256, code_sha256, network, audio, added_at)
+         VALUES ('mcp:old', '1', '/somewhere', '{}', ?1, ?1, 0, 'none', 'x')",
+        [&"0".repeat(64)],
+    )
+    .unwrap();
+    let ids: Vec<String> = s.list_plugins().unwrap().into_iter().map(|p| p.id).collect();
+    assert_eq!(ids, ["meetko/action-items-py"]);
+    let toml = std::fs::read_to_string(root().join("plugins/action-items-py/meetko.toml")).unwrap();
+    let man = Manifest::parse(&toml.replace("meetko/action-items-py", "MCP:x")).unwrap();
+    assert!(man.require_plugin().unwrap_err().to_string().contains("reserved"));
 }

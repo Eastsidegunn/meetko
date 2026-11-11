@@ -46,6 +46,8 @@ export interface ExportControl {
   root: HTMLElement;
   /** the version on screen and the title the toolbar shows; null hides the control's menu */
   show(v: { id: string; kind: Kind } | null, title: string): void;
+  /** the version's names or edited text changed: copy texts fetched earlier are out of date */
+  changed(): void;
 }
 
 /** `onError(lead, text)` shows a failure in the screen's notice area; `alive()` is false once the
@@ -97,6 +99,7 @@ export function exportControl(onError: (lead: string, text: string) => void, ali
 
   return {
     root: h("span", { class: "mt-act" }, done, btn),
+    changed() { ready = new Map(); readyFor = ""; },
     show(v, t) {
       // a menu opened for another version (or for none) must not act on what is now on screen
       if (menuOpen() && (!v || v.id !== cur?.id)) {

@@ -7,6 +7,35 @@ this repository uses, fetches or refers to. The per-engine files are authoritati
 - [engines/nemotron-stream/THIRD_PARTY_NOTICES.md](engines/nemotron-stream/THIRD_PARTY_NOTICES.md)
 - [engines/sherpa-stream/THIRD_PARTY_NOTICES.md](engines/sherpa-stream/THIRD_PARTY_NOTICES.md)
 
+## Code adapted into this repository
+
+`crates/meetko-core/src/whisper_prompt.rs` ports whisper.cpp's tokenizer (the pre-split pattern and the
+longest-match loop of `tokenize`) and its model-header layout to Rust, to count a prompt's tokens exactly.
+
+```
+MIT License
+
+Copyright (c) 2023-2026 The ggml authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Software fetched or run next to meetko
 
 None of these is committed to this repository. The engines' `fetch-libs.sh` scripts download pinned,
@@ -20,6 +49,8 @@ a build must ship those texts.
 | ggml 0.25.1 (inside the NeMo-Speech.cpp archive) | MIT | https://github.com/ggml-org/llama.cpp (`ggml/`) | `engines/nemotron-stream` |
 | sherpa-onnx 2.0.1 | Apache-2.0 | https://github.com/k2-fsa/sherpa-onnx | `engines/sherpa-stream` |
 | ONNX Runtime 1.28.2 (bundled in the sherpa-onnx release) | MIT | https://github.com/microsoft/onnxruntime | `engines/sherpa-stream` |
+| CrispASR 0.8.53 (`libcrispasr`, prebuilt release; it carries its own notices for ggml, llamafile sgemm, KleidiAI, glint, nlohmann/json, RNNoise, libogg/libopus/opusfile, miniaudio and others in `THIRD_PARTY_NOTICES.txt`, which `fetch-libs.sh` keeps) | MIT | https://github.com/CrispStrobe/CrispASR | `engines/qwen3-asr` (experimental) |
+| ggml 0.26.0 (inside the CrispASR archive) | MIT | https://github.com/ggml-org/ggml | `engines/qwen3-asr` |
 
 The NeMo-Speech.cpp archive also carries texts for SentencePiece, Abseil, protobuf, OpenFst, re2, Sparrowhawk
 and others; the Windows and Linux archives add the Visual C++ and GCC runtime libraries. See the nemotron
@@ -49,6 +80,8 @@ notices that come with the models.**
 | model | license | source |
 |---|---|---|
 | whisper ggml model (e.g. `ggml-large-v3-turbo.bin`), optional, for 다시 받아쓰기 | MIT (Hugging Face `ggerganov/whisper.cpp`; OpenAI Whisper weights are MIT) | https://huggingface.co/ggerganov/whisper.cpp |
+| Qwen3-ASR-1.7B, as the q8_0 GGUF conversion `cstr/qwen3-asr-1.7b-GGUF` (revision `674df5d44b50a63e7102a18895ed20e3f91de301`) of `Qwen/Qwen3-ASR-1.7B` | Apache-2.0 (Qwen; the conversion keeps it) | https://huggingface.co/Qwen/Qwen3-ASR-1.7B, https://huggingface.co/cstr/qwen3-asr-1.7b-GGUF |
+| Qwen3-ForcedAligner-0.6B, as the q8_0 GGUF conversion `cstr/qwen3-forced-aligner-0.6b-GGUF` (revision `1ec5110602ccab18c878ddebedab0891e290a95c`) of `Qwen/Qwen3-ForcedAligner-0.6B` | Apache-2.0 | https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B, https://huggingface.co/cstr/qwen3-forced-aligner-0.6b-GGUF |
 | sherpa-onnx streaming zipformer Korean (`sherpa-onnx-streaming-zipformer-korean-2024-06-16`), legacy engine, not offered by the app | no license stated on the model card (checked 2026-10-31); converted from an icefall model whose name indicates KsponSpeech training data, whose terms may restrict use. **Research/testing only** | https://github.com/k2-fsa/sherpa-onnx (model zoo) |
 
 ### OpenMDW License Agreement, version 1.1

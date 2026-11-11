@@ -13,6 +13,35 @@
 - **Meeting prompt.** Not tried on real meetings: which process each app uses for the microphone (FaceTime and Safari
   in particular), and whether an app lets go of the microphone while muted, which would bring an early
   "녹음을 정지할까요?" ([meeting-detection.md](meeting-detection.md)).
+- **Speaker separation while recording.** Checked only by feeding the files of one 69 s test meeting at recording pace
+  through the core with both real engines (engines/nemotron-stream README, Diarization), not in a real recording through
+  the app. The caption engine and the two diarization sessions share the GPU; on long meetings and slower machines it
+  is not known how often a session falls behind (then it is dropped and the draft separates the speakers after the
+  recording, as before) or whether the shared GPU slows the captions down. The labels shown while recording are
+  provisional: with the 10 s rule (a speaker with less talk time is merged into the others) a channel shows no numbers
+  until a second voice has spoken for 10 s, and numbers can still change before the recording ends. The stored
+  speakers come from the final turns and may be numbered differently from what the record screen last showed.
+- **Automatic re-transcription after a recording.** When a recording stops, the live draft is made and then, in the
+  same job slot, the recording is transcribed again by the most accurate ready batch engine (setting `batch_engine`:
+  `auto` by default = Qwen3-ASR, else Whisper; an explicit choice that is not ready falls back to the other one;
+  `auto_retranscribe`, on by default, turns the step off). Checked with fake engines only (app `api/tests.rs`,
+  `pipeline.rs`), not yet in a real recording through the app. Known limits:
+  - It starts only from the stop of a recording, and only when the job slot is free then. If another meeting's job
+    runs at that moment, neither the live draft nor the re-transcription starts on its own; the meeting screen offers
+    "초안 만들기" and "다시 받아쓰기" as buttons. A plain "초안 만들기" click does not chain the re-transcription.
+  - A recording without live captions gets no automatic step (there is no live draft to follow); it is transcribed
+    by hand as before. The CLI has no live captions, so it has no automatic step either.
+  - Speakers: a channel whose live session separated the speakers (stored on the live version only after the
+    fed-audio sha256 checks of `live::store_live`) reuses those turns; the producer is the live session's own, with
+    `params.live: true` and `params.reused_from: <live version id>`. A channel without live speakers is separated
+    again by the diarization engine, even when the live draft already separated it after the recording (so such a
+    channel is separated twice per recording).
+  - Results made on the live draft go stale when the new draft becomes the head; no plugin runs again on its own.
+  - Qwen3-ASR takes about 2.5–3 min per 10 min of meeting on the machine measured; slower machines and very long
+    meetings are not measured. The job holds the one transcription slot all that time, so another meeting's
+    transcription waits (or can cancel it).
+  - With `auto` as the default, the app checks the Qwen3-ASR models (and its sandbox) at every status read; hashes
+    are cached, but the first check after a model download hashes about 3.5 GB.
 - **Windows and Linux.** Windows is built and tested in CI but has no capture program and no meeting prompt,
   and has not been used for real. Linux is neither built nor tested. Plugins have no sandbox on either.
 

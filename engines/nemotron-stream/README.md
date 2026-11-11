@@ -8,13 +8,13 @@ talks to it in NDJSON JSON-RPC 2.0 over stdio (`crates/meetko-core/src/live.rs`)
 
 Why: on 5 h of Korean meetings the CER was 14.0 % against 46.6 % for the sherpa zipformer
 (Whisper batch: 13.5 %). These numbers were measured on meeting data that is not included in this repository
-(the AIHub data cannot be redistributed), so they cannot be reproduced from it. The model is weaker on English words inside Korean speech; `auto` helps (see Language).
+(the AIHub data cannot be redistributed), so they cannot be reproduced from it. The model is weaker on English words inside Korean speech; `auto` and a fresh stream per utterance help (see Language and Code-switched speech).
 
 Not a member of the root workspace: it links prebuilt shared libraries, which a plain
 `cargo test --workspace` must not need.
 
 This crate builds two engines on the same libraries: `meetko-nemotron-stream` (above) and
-`meetko-nemotron-diar`, the batch speaker diarization engine (see Diarization below). They share
+`meetko-nemotron-diar`, the speaker diarization engine, batch and live (see Diarization below). They share
 `vendor/`, `build.rs`, `fetch-libs.sh`, the hand-written C declarations and the protocol plumbing
 (`src/lib.rs`: `ffi`, `diar`, `rpc`); a separate crate would have needed a second copy of ~100 MB of
 libraries and of the same FFI helpers. The cost is that they are built and shipped together.
@@ -75,6 +75,13 @@ library for its own struct size.
   empty `units`, so a caption can show text before the words are final. The core builds words from finals only.
 - An utterance ends after 800 ms of trailing silence (the library's endpointing, token-silence based);
   `MAX_SEGMENT_CHARS` forces an end like in the sherpa engine. The tail is flushed by `stream.close`.
+- Every utterance is decoded by a fresh library stream (`src/session.rs`): when the library ends an utterance
+  with words, the engine closes the stream, opens a new one on the same loaded model, and feeds it again the
+  audio from the end of that utterance's last word (at most 10 s). Word times of the new stream are shifted by
+  where it began. One stream for the whole recording carried the model's encoder cache and decoder state from
+  one utterance into the next; after a switch between Korean and English the model then wrote the next
+  utterance in the wrong script or, more often, emitted nothing at all for whole sentences. `stream.open`
+  records this as `params.stream_per_utterance: true`. See "Code-switched speech" below for the measurement.
 - Streaming policy: 160 ms chunks, right context 1 (the library's low-latency preset), greedy RNNT.
   GPU 0 (Metal) on macOS, CPU elsewhere. `stream.open`'s result records these as `params`.
 - `emitted_at_ms` is the audio fed so far, as in the sherpa engine.
@@ -86,6 +93,22 @@ hand, the engine reads it too). The default is `auto`: the model detects the lan
 the same (unpublished) Korean meetings come out the same as with `ko` (CER 14.1 % against 14.0 %) while a
 Korean-English code-switch set improves from 76.6 % to 44.8 %. `ko` is `ko-KR` and fixes Korean, `en` is
 `en-US`, and any `xx-YY` the model supports passes through. Anything else is refused with `-32602`.
+
+### Code-switched speech
+
+Measured on four synthetic meetings (40 min) built from HiKE Korean-English code-switched clips (Apache-2.0;
+not in this repository), `auto`, through the core's live path: with one library stream for the whole
+recording the captions had a CER of 61.8 % (letters and digits), and 9,218 of the 19,937 reference characters
+were deleted: whole sentences after a switch of language came out as nothing. Feeding the same audio to the
+library's offline call gave the same gaps, while each utterance cut out and decoded alone came back, so the
+loss came from state carried between utterances, not from the audio. With a fresh stream per utterance the CER
+is 38.9 % and 4,034 characters are deleted; English terms found 54.7 % (was 27.8 %). Decoding each reference
+utterance alone (the best this model can do with perfect segmentation) gives the same deletion rate on a
+6-minute subset (18.8 % against 19.1 %), so what is still lost is the model's own limit on a switch inside one
+utterance (Whisper large-v3-turbo after the recording: 17.6 % on the same meetings). Korean-only speech is
+unchanged (a TTS meeting: 3.9 % before, 4.2 % after; `raw/meeting01` recall 0.989 before, 0.979 after), and so
+is the latency on the audio clock (first text of a segment 0.2 s after its first word, finals 0.9 s after the
+last). The extra cost is the replay, about one second of audio decoded twice per utterance.
 
 ## Protocol
 
@@ -114,7 +137,8 @@ export MEETKO_DIAR_TIMEOUT_SECS=120             # added to the audio length to m
 ```
 
 Protocol (NDJSON JSON-RPC 2.0, stdout carries protocol only): `initialize` (answers `role: "diarization"`),
-`diarize.run {wav, audio_sha256}`, `shutdown`. `wav` is a mono PCM16 file (8-96 kHz; the library resamples)
+`diarize.run {wav, audio_sha256}`, the live session (`diarize.open`, `diarize.push`, `diarize.event`,
+`diarize.close`, see Live session below), `shutdown`. `wav` is a mono PCM16 file (8-96 kHz; the library resamples)
 that the caller has already hashed; `audio_sha256` is echoed into the result, which is a contract
 `diarization` engine result: integer-ms `turns` with engine-local labels `spk1`, `spk2` ..., `params`
 (`mode: streaming`, the model's default geometry, the library's segmentation defaults, `max_speakers`)
@@ -128,6 +152,47 @@ The pass is the *streaming* one (160 ms pushes, like the library's own example a
 recordings work; the offline full-attention path is limited to about 6.6 minutes. On an M-series Mac a
 10-minute meeting takes about 9 s in a debug build (Metal), a 69 s recording about 1 s. Linux and Windows
 use the CPU build and have not been run.
+
+### Live session
+
+The same streaming pass, fed while a capture records (`crates/meetko-core/src/live/diar.rs`: one process per
+channel next to the caption engine, reading the same growing WAV). The sessions start once both caption engines
+listen, so the captions warm up first; the audio recorded meanwhile waits in the file. It is our engine protocol,
+not part of the contract; only its final result is a contract `diarization` result.
+
+- `diarize.open {sample_rate}` (8000-96000; the core sends 16000) opens a session and loads the model if needed;
+  the reply is `{params}` (`mode: streaming`, `live: true`, as below). One session at a time per process
+  (`-32602` for a second); no model is `-32010` and the process goes on.
+- `diarize.push {pcm_s16le_b64}` notifications: mono PCM16, any length (the core sends 100 ms). Invalid PCM, a push
+  without a session, or a line that is not JSON while a session is open ends the process like a library failure
+  (one `engine.error`, exit code 1): dropped audio would shift every later turn.
+- `diarize.event {keep, turns, labelled_ms, emitted_at_ms}` notifications, at most one per second of audio the
+  model has labelled: keep the first `keep` turns of what was sent so far and replace the rest with `turns`
+  (integer ms from the start of the session, labels `spk1`...). The model revises the recent past (a turn grows, a
+  short one appears), so a turn already sent can come again; turns before `keep` never change. `labelled_ms` is
+  how far the model has labelled (it trails the audio by a chunk and its right context), `emitted_at_ms` the audio
+  pushed so far. An event goes out every second even when nothing changed: the core measures the session's lag by it.
+- `diarize.close {audio_sha256?}` finishes the stream (labels the tail) and answers with the same result as
+  `diarize.run`, with `params.live: true` and `params.fed_ms` (and without `push_ms`). `audio_sha256` is echoed
+  when given; the core does not give it, because the session read no file. It adds the sha256 import recorded for
+  the channel file itself, and only when the file still has that sha256, the PCM the core pushed is exactly the
+  file's PCM (same length, same sha256 of the bytes pushed), and the engine's `fed_ms` agrees.
+
+Fed the same audio, the closed session gives the same turns as `diarize.run` (`tests/diar.rs` checks it on both
+channels of `raw/meeting01`). On an M-series Mac a debug build labels 69 s of audio in 1.3-3 s (20-50x real time).
+
+What the core does with it: while recording, each caption segment gets the speaker who covers most of it, after
+the same 10 s merge rule and numbering as the stored version ("상대 1", "상대 2"; nothing while the channel has one
+speaker left), sent to the app as `live` events of kind `speakers` at most once a second per channel; nothing of
+them is stored. These labels are provisional: a number can change while the model learns, and the stored speakers
+(from the closed session's final turns, with the merge rule applied to the whole recording) may be numbered
+differently from what the record screen showed. At stop the session is closed and `store_live` gives its turns to
+compose as for a batch draft (producer role `diarization`, `params.mode: streaming`, `params.live: true`, the staged
+model's sha256 and `model_pinned`), so `draft_from_live` keeps those speakers and runs no second pass for that
+channel. A session that cannot start, dies, breaks the protocol, falls more than 20 s behind the recording (plus
+the audio that came in while its model loaded, up to another 20 s), or is not closed within 5 s after the captions
+are in is dropped (a stop never waits long for it): its labels are withdrawn, the captions are untouched, and the
+draft separates that channel after the recording as before.
 
 How the core names the speakers: a channel with one detected speaker (or none) keeps the channel's own speaker
 and label, "나" or "상대", as without diarization; with several they are "나 1", "나 2" / "상대 1", "상대 2" in
@@ -143,6 +208,7 @@ cargo test                                      # unit tests; the stdio tests sk
 MEETKO_REQUIRE_MODELS=1 cargo test              # ... and fail instead of skipping
 MEETKO_ENGINE_DEV_RPATH=1 cargo test --release --test stdio -- --nocapture   # the real model, real-time factor
 MEETKO_TEST_PACED=1 ...                         # feed in real time to see the wall-clock latency
+MEETKO_CODESWITCH_WAV=/path/to/clip.wav ...     # + clip.json (utterances[].text): code-switched speech is not dropped
 MEETKO_DIAR_MULTI_WAV=/path/to/meeting.wav MEETKO_REQUIRE_MODELS=1 cargo test --test diar -- --nocapture
 ```
 
@@ -164,6 +230,17 @@ exit code 1, no `GGML_ASSERT`). Without the models the model-backed tests skip, 
 `MEETKO_REQUIRE_MODELS=1`. `crates/meetko-core/tests/diarize.rs` covers the core side with a fake engine:
 success, a dying engine, a hanging one, output for other audio or breaking the schema, an unpinned model,
 cancelling, and the path without an engine.
+
+The live session: through the binary, the events fold (by `keep`) into the start of the final turns, the closed
+session equals `diarize.run` on the same audio, and its requests and fatal paths (a push without a session; odd
+PCM or a torn line in one) behave as above. `the_core_separates_speakers_live_next_to_the_captions` runs the
+core's `LiveSession` with both real engines on both channels of `raw/meeting01` (mic: `MEETKO_DIAR_MIC_WAV`,
+default `raw/meeting01/mic.wav`; it also needs the streaming model) while the files grow at 4x real time, or in
+real time with `MEETKO_TEST_PACED=1`, and prints how long after a caption became final its speaker was named;
+the stored live version must carry both channels' live speakers. The core side with a fake engine is in
+`crates/meetko-core/src/live/tests.rs` (labels while recording, the stored live version and a first draft that
+runs no second pass, a session that falls behind, dies, breaks the protocol or cannot open, a result that does
+not match the stored file).
 
 ## Third-party software
 

@@ -61,7 +61,10 @@ function producer(p: Producer, d: MeetingData): HTMLElement {
       ["모델", h("span", {}, p.model ? p.model.id : unk(), p.model?.sha256 ? hashBtn(p.model.sha256) : null)],
       p.word_timing ? ["단어 시각", p.word_timing === "token" ? h("span", { class: "tag-warn", text: WORD_TIMING.token }) : (WORD_TIMING[p.word_timing] ?? p.word_timing) + (p.granularity ? ` · ${p.granularity}` : "")] : null,
       ["네트워크", p.network ? h("span", { class: "tag-warn", text: "사용함" }) : "사용 안 함"],
-      chans ? ["채널", chans] : null),
+      chans ? ["채널", chans] : null,
+      // the core judged the channel dead or steady and did not run the engine on it: say so, so an empty
+      // channel does not read as "nothing was said" (the core's speech check, docs/model-setup.md)
+      p.params?.skipped === "no_speech" ? ["결과", h("span", { class: "tag-warn", text: "말소리 없음으로 건너뜀 · 엔진을 돌리지 않았어요" })] : null),
     params
       ? h("details", {}, h("summary", { text: `params ${params.length}개` }), h("div", { class: "mono" }, ...params.flatMap(([k, val]) => [h("span", { text: k }), h("span", { text: JSON.stringify(val) })])))
       : kv(["params", unk()]),

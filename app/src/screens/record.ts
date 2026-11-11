@@ -1,4 +1,4 @@
-import { api, asError, whisperNeed, whisperReady, type CaptureDone, type CaptureEvent, type ProviderError, type Status } from "../api";
+import { api, asError, batchNeed, batchReady, engineName, type CaptureDone, type CaptureEvent, type ProviderError, type Status } from "../api";
 import { announce, h, mmss, notice } from "../dom";
 import { captureBus, liveBus } from "../jobs";
 import { errorHeading, gapReason, warning } from "../labels";
@@ -11,11 +11,18 @@ interface Rec {
   phase: Phase; startedAt: number | null; levels: [number, number]; peaks: [number, number, number, number];
   gaps: Gap[]; errors: ProviderError[]; done: CaptureDone | null; failure: string | null;
   captions: [Map<number, Cap>, Map<number, Cap>]; liveLost: [boolean, boolean];
+  /** the caption engine listens (or a caption came): until then the lane says it is getting ready */
+  liveReady: [boolean, boolean];
+  /** provisional speaker number of each caption segment (live speaker separation); absent = unknown */
+  who: [Map<number, number>, Map<number, number>];
 }
 /** One caption segment; a later revision replaces the earlier one entirely, a final never changes. */
 interface Cap { revision: number; final: boolean; text: string }
-const rec: Rec = { phase: "idle", startedAt: null, levels: [0, 0], peaks: [0, 0, 0, 0], gaps: [], errors: [], done: null, failure: null, captions: [new Map(), new Map()], liveLost: [false, false] };
+const fresh = (): Pick<Rec, "captions" | "liveLost" | "liveReady" | "who"> => ({ captions: [new Map(), new Map()], liveLost: [false, false], liveReady: [false, false], who: [new Map(), new Map()] });
+const rec: Rec = { phase: "idle", startedAt: null, levels: [0, 0], peaks: [0, 0, 0, 0], gaps: [], errors: [], done: null, failure: null, ...fresh() };
 const capSubs = new Set<(channel: number, segment: number) => void>();
+/** speakers changed on a channel: the lane redraws its markers (at most once a frame) */
+const whoSubs = new Set<(channel: number) => void>();
 /** set while the record screen is on screen: a saved live version opens the meeting only then */
 let openMeeting: ((id: string) => void) | null = null;
 const subs = new Set<() => void>();
@@ -43,10 +50,20 @@ const unit = (rms: number) => Math.max(0, Math.min(1, (db(rms) + 60) / 60));
 liveBus.on((e) => {
   if (rec.phase === "idle" || e.channel > 1) return;
   if (e.event === "error") { rec.liveLost[e.channel] = true; notify(); return; } // quiet: the lane says so, the recording goes on
+  if (e.event === "ready") { if (!rec.liveReady[e.channel]) { rec.liveReady[e.channel] = true; notify(); } return; }
+  if (e.event === "speakers") {
+    const who = rec.who[e.channel];
+    for (const l of e.labels) { if (l.speaker === null) who.delete(l.segment); else who.set(l.segment, l.speaker); }
+    whoSubs.forEach((f) => f(e.channel));
+    return;
+  }
   const seg = rec.captions[e.channel], old = seg.get(e.segment);
   if (old && (old.final || old.revision >= e.revision)) return;
   seg.set(e.segment, { revision: e.revision, final: e.final, text: e.text });
+  const first = !rec.liveReady[e.channel];
+  rec.liveReady[e.channel] = true;
   capSubs.forEach((f) => f(e.channel, e.segment));
+  if (first) notify();
 });
 
 captureBus.on((e: CaptureEvent) => {
@@ -77,7 +94,7 @@ let liveAtStart: boolean | null = null;
 
 async function start(): Promise<void> {
   liveAtStart = currentStatus()?.live.ok ?? null;
-  Object.assign(rec, { phase: "starting", startedAt: null, levels: [0, 0], peaks: [0, 0, 0, 0], gaps: [], errors: [], done: null, failure: null, captions: [new Map(), new Map()], liveLost: [false, false] });
+  Object.assign(rec, { phase: "starting", startedAt: null, levels: [0, 0], peaks: [0, 0, 0, 0], gaps: [], errors: [], done: null, failure: null, ...fresh() });
   notify();
   try { await api.captureStart(); } catch (e) { rec.phase = "idle"; rec.failure = asError(e).message; notify(); }
 }
@@ -99,11 +116,13 @@ async function stop(): Promise<void> {
 
 const MAX_SEGMENTS_SHOWN = 200;
 /** One caption lane. Partials read in the tertiary colour, finals in the primary one; text goes in by textContent. */
-function lane(i: 0 | 1): { el: HTMLElement; paint(): void; update(segment: number): void } {
+function lane(i: 0 | 1): { el: HTMLElement; paint(): void; update(segment: number): void; relabelSoon(): void } {
   const log = h("div", { class: "cap-scroll", role: "log", "aria-label": `${NAMES[i][0]} 실시간 자막`, "aria-live": "off", tabindex: "0" });
   const empty = h("span", { class: "cap-empty" });
   const el = h("section", { class: "cap-lane" }, h("div", { class: "cap-h t-footnote c-2", text: NAMES[i][0] }), log);
   const spans = new Map<number, HTMLElement>();
+  /** speaker markers ("상대 1"), each before the first segment of a run of the same speaker */
+  const markers = new Map<number, HTMLElement>();
   let follow = true; // paged-follow in spirit: stay at the end until the user scrolls up, resume when back at the end
   log.addEventListener("scroll", () => { follow = log.scrollHeight - log.scrollTop - log.clientHeight < 24; });
   const stick = () => { if (follow) log.scrollTop = log.scrollHeight; };
@@ -115,16 +134,44 @@ function lane(i: 0 | 1): { el: HTMLElement; paint(): void; update(segment: numbe
       sp = h("span", { class: "cap" });
       spans.set(seg, sp);
       log.insertBefore(sp, empty.parentNode === log ? empty : null);
-      if (spans.size > MAX_SEGMENTS_SHOWN) { const [k, old] = spans.entries().next().value as [number, HTMLElement]; old.remove(); spans.delete(k); }
+      if (spans.size > MAX_SEGMENTS_SHOWN) {
+        const [k, old] = spans.entries().next().value as [number, HTMLElement];
+        old.remove(); spans.delete(k); markers.get(k)?.remove(); markers.delete(k);
+        relabelSoon(); // the run that began there needs its marker on the next segment
+      }
     }
     sp.textContent = cap.text;
     sp.classList.toggle("fin", cap.final);
   };
+  // Provisional speakers may change while the separation learns: markers are redrawn in place, at
+  // most once a frame, and never announced (the log is aria-live off).
+  let whoFrame = 0;
+  const relabel = () => {
+    whoFrame = 0;
+    const who = rec.who[i];
+    let prev: number | undefined;
+    for (const [seg, sp] of spans) {
+      const s = who.get(seg);
+      const want = s !== undefined && s !== prev ? `${NAMES[i][0]} ${s}` : null;
+      if (s !== undefined) prev = s;
+      let m = markers.get(seg);
+      if (!want) { if (m) { m.remove(); markers.delete(seg); } continue; }
+      if (!m) { m = h("span", { class: "cap-who" }); markers.set(seg, m); }
+      if (m.nextSibling !== sp) log.insertBefore(m, sp);
+      if (m.textContent !== want) m.textContent = want;
+    }
+    stick();
+  };
+  const relabelSoon = () => { if (!whoFrame) whoFrame = requestAnimationFrame(relabel); };
   return {
     el,
+    relabelSoon,
     paint() {
-      if (spans.size === 0) for (const seg of [...rec.captions[i].keys()].sort((x, y) => x - y)) put(seg); // the screen was opened again mid-recording
-      const msg = rec.liveLost[i] ? "자막이 멈췄어요. 녹음은 계속돼요." : spans.size === 0 && rec.phase === "recording" ? "말하면 여기에 자막이 나와요" : "";
+      if (spans.size === 0) { for (const seg of [...rec.captions[i].keys()].sort((x, y) => x - y)) put(seg); relabel(); } // the screen was opened again mid-recording
+      const waiting = rec.phase === "recording" || rec.phase === "starting";
+      const msg = rec.liveLost[i] ? "자막이 멈췄어요. 녹음은 계속돼요."
+        : spans.size === 0 && waiting && !rec.liveReady[i] ? "자막 준비 중…"
+        : spans.size === 0 && rec.phase === "recording" ? "말하면 여기에 자막이 나와요" : "";
       empty.textContent = msg;
       empty.classList.toggle("lost", rec.liveLost[i]);
       if (msg) log.append(empty); else empty.remove();
@@ -132,6 +179,7 @@ function lane(i: 0 | 1): { el: HTMLElement; paint(): void; update(segment: numbe
     },
     update(seg: number) {
       put(seg);
+      if (rec.who[i].has(seg)) relabelSoon(); // its speaker came before the caption did
       if (!rec.liveLost[i]) empty.remove();
       stick();
     },
@@ -181,10 +229,14 @@ export function recordScreen(main: HTMLElement, status: Status, open: (meetingId
   let liveOk = status.live.ok;
   // while a recording runs, what it started with; the new status applies once it is back to idle
   const live = (): boolean => (rec.phase !== "idle" && liveAtStart !== null ? liveAtStart : liveOk);
-  let whisperOk = whisperReady(status);
+  let whisperOk = batchReady(status); // an engine for 다시 받아쓰기 is ready (the chosen one, or the one 자동 or the fallback picks)
   const lanes = [lane(0), lane(1)];
   const caps = h("div", { class: "caps", hidden: true }, ...lanes.map((l) => l.el));
-  const offCaps = (() => { const f = (c: number, seg: number) => lanes[c]?.update(seg); capSubs.add(f); return () => capSubs.delete(f); })();
+  const offCaps = (() => {
+    const f = (c: number, seg: number) => lanes[c]?.update(seg), g = (c: number) => lanes[c]?.relabelSoon();
+    capSubs.add(f); whoSubs.add(g);
+    return () => { capSubs.delete(f); whoSubs.delete(g); };
+  })();
   openMeeting = open;
   let tick: ReturnType<typeof setInterval> | undefined, off: () => void = () => {};
   // registered before anything below can throw (draw, DOM building)
@@ -194,12 +246,15 @@ export function recordScreen(main: HTMLElement, status: Status, open: (meetingId
   const hint = h("p", { class: "c-2 t-footnote" });
   const paintHint = () => {
     hint.textContent = `${live()
-      ? `녹음 중에 실시간 자막이 나오고, 끝나면 자막이 바로 초안이 돼요.${whisperOk ? " 더 정확한 결과가 필요하면 회의에서 ‘다시 받아쓰기’를 누르세요." : ""}`
+      ? `녹음 중에 실시간 자막이 나오고, 끝나면 자막이 바로 초안이 돼요.${!whisperOk ? ""
+        : status.auto_retranscribe
+        ? ` 이어서 ${engineName(status.batch_engine)}로 녹음 전체를 더 정확하게 다시 받아 적어 새 초안을 만들어요. 10분 회의에 몇 분 걸리고, 그동안 실시간 자막 초안을 읽을 수 있어요.`
+        : " 더 정확한 결과가 필요하면 회의에서 ‘다시 받아쓰기’를 누르세요."}`
       : "회의가 끝난 뒤에 받아써요. 이 설정에서는 녹음 중에 자막이 나오지 않아요."} 원본 오디오는 이 기기에만 저장돼요. ‘나’는 마이크, ‘상대’는 시스템 소리예요. 스피커로 들으면 상대 목소리가 마이크에도 섞이니 이어폰을 권해요.`;
   };
   paintHint();
   // a model set up meanwhile (or 다시 확인 elsewhere) shows here without leaving the screen
-  onStatus((s) => { status = s; ready = s.capture.ok; liveOk = s.live.ok; whisperOk = whisperReady(s); lastSig = ""; paintHint(); draw(); }, onCleanup);
+  onStatus((s) => { status = s; ready = s.capture.ok; liveOk = s.live.ok; whisperOk = batchReady(s); lastSig = ""; paintHint(); draw(); }, onCleanup);
   let lastPhase = rec.phase;
 
   btn.addEventListener("click", () => void (rec.phase === "idle" ? start() : rec.phase === "recording" ? stop() : undefined));
@@ -241,7 +296,7 @@ export function recordScreen(main: HTMLElement, status: Status, open: (meetingId
       for (const w of d.warnings) extra.append(notice("warn", "", warning(w)));
       if (d.live_note) extra.append(notice("info", "실시간 자막은 저장하지 못했어요.", whisperOk
         ? "녹음은 그대로 저장됐어요. 회의를 열어 받아쓰면 전사본을 만들 수 있어요."
-        : `녹음은 그대로 저장됐어요. 전사본을 만들려면 설정에서 ${whisperNeed(status)}을 설정해 주세요.`));
+        : `녹음은 그대로 저장됐어요. 전사본을 만들려면 설정에서 ${batchNeed(status)}을 설정해 주세요.`));
     } else if (d?.error) extra.append(notice("danger", "저장하지 못했어요.", d.error));
   };
 

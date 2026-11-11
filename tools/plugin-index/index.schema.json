@@ -28,7 +28,23 @@
           "required": ["network", "audio"],
           "properties": {
             "network": { "type": "boolean", "description": "declared permissions.network (declared, not enforced)" },
-            "audio": { "type": "boolean", "description": "declared input.audio = full (declared, not enforced)" }
+            "audio": { "type": "boolean", "description": "declared input.audio = full (declared, not enforced)" },
+            "secrets": {
+              "type": "array",
+              "description": "declared permissions.secrets (API key names the user sets); present only when declared, and only with network",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*(_KEY|_TOKEN|_SECRET)$", "maxLength": 64 }
+            },
+            "settings": {
+              "type": "array",
+              "description": "declared permissions.settings (model, base URL the user may set; not secret); present only when declared, and only with network",
+              "minItems": 1,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*(_MODEL|_BASE_URL)$", "maxLength": 64 }
+            }
           }
         },
         "runtime": { "type": "string", "description": "coarse label from run.command: python, node, shell, binary, or the program name" },

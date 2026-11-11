@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::contract::{compose, engine_result_validator, schema_errors, ChannelInput, EngineWord, MeetingData, Span, VersionKind};
+use crate::contract::{compose, engine_result_validator, schema_errors, Basis, ChannelInput, DiarTurn, Diarization, EngineWord, MeetingData, Span, VersionKind};
 use crate::diarize::{self, DiarEngine, DiarRequest};
 use crate::error::{Error, Result};
 use crate::manifest::plugin_code_sha256;
@@ -186,8 +186,46 @@ pub fn transcribe_with(
     progress: &dyn Fn(Progress),
     cancel: &AtomicBool,
 ) -> Result<Transcribed> {
+    transcribe_reusing(store, engine, diar, meeting_id, None, language, progress, cancel)
+}
+
+/// The live version whose speakers a batch draft may reuse: `live_id` when it is a live version of
+/// this meeting made over this recording, else `None`.
+fn live_speakers(store: &Store, live_id: &str, meeting_id: &str, recording_sha256: &str) -> Result<Option<MeetingData>> {
+    let row = store.version_row(live_id)?;
+    if row.kind != VersionKind::Live || row.meeting_id != meeting_id {
+        return Ok(None);
+    }
+    let live = store.version(live_id)?;
+    Ok((live.recording.sha256 == recording_sha256).then_some(live))
+}
+
+/// `transcribe_with`, reusing the speakers the live session separated (`speakers_from`: the meeting's
+/// live version) for the channels that have them, instead of separating them again. It is the same
+/// audio: `live::store_live` attached the live turns only after checking that the engine was fed
+/// exactly the stored file's PCM under its sha256, and the file is checked against that sha256 again
+/// while it is staged here. The reused `diarization` producer is the live session's own (its engine
+/// and model, `params.live` true) plus `params.reused_from`, the live version it was taken from:
+/// nothing claims a pass over the file ran. The other channels are separated by `diar` as before.
+/// Without `speakers_from` this is `transcribe_with`.
+#[allow(clippy::too_many_arguments)]
+pub fn transcribe_reusing(
+    store: &Store,
+    engine: &dyn BatchEngine,
+    diar: Option<&dyn DiarEngine>,
+    meeting_id: &str,
+    speakers_from: Option<&str>,
+    language: Option<&str>,
+    progress: &dyn Fn(Progress),
+    cancel: &AtomicBool,
+) -> Result<Transcribed> {
     let (meeting, recording, files) = store.meeting_and_recording(meeting_id)?;
-    let lang = language.or(meeting.language_hint.as_deref()).unwrap_or("ko").to_string();
+    let live = match speakers_from {
+        Some(id) => live_speakers(store, id, meeting_id, &recording.sha256)?,
+        None => None,
+    };
+    let explicit = language.or(meeting.language_hint.as_deref());
+    let lang = explicit.unwrap_or("ko").to_string();
     let mut channels = BTreeMap::new();
     let mut warnings = Vec::new();
     // the channels as they are without diarization: what the draft falls back to
@@ -202,6 +240,7 @@ pub fn transcribe_with(
             wav: &tmp.path().join("input.wav"),
             audio_sha256: &f.sha256,
             language: &lang,
+            language_explicit: explicit.is_some(),
             channel: f.index,
             channels: files.len() as u32,
             data_dir: store.dir(),
@@ -212,7 +251,9 @@ pub fn transcribe_with(
             return Err(Error::BadEngineOutput(errs.into_iter().take(5).collect::<Vec<_>>().join("; ")));
         }
         let mut input = batch_channel(&res, f.index, &f.role, f.label.as_deref(), f.coverage.as_deref())?;
-        if let Some(d) = diar {
+        // the live session's speakers of this very audio: no second pass
+        let reused = live.as_ref().is_some_and(|md| carry_channel(md, f.index, &mut input, true));
+        if let Some(d) = diar.filter(|_| !reused) {
             let req = DiarRequest { wav: &tmp.path().join("input.wav"), audio_sha256: &f.sha256, channel: f.index, duration_ms: f.duration_ms };
             progress(Progress { channel: f.index, channels: files.len() as u32, percent: 100, diarizing: true });
             match d.diarize(&req, cancel).and_then(|r| with_diarization(&mut input, &r, &f.sha256, recording.duration_ms, f.index, d.min_speaker_ms())) {
@@ -221,7 +262,7 @@ pub fn transcribe_with(
                 Err(e) => warnings.push(format!("speaker separation failed on channel {}: {e}", f.index + 1)),
             }
         }
-        if diar.is_some() {
+        if diar.is_some() || reused {
             plain.insert(f.index, ChannelInput { diarization: None, single_speaker: false, producers: input.producers.iter().filter(|p| p["role"] != "diarization").cloned().collect(), ..input.clone() });
         }
         channels.insert(f.index, input);
@@ -276,6 +317,52 @@ pub fn channels_of(md: &MeetingData) -> Result<BTreeMap<u32, ChannelInput>> {
     Ok(out)
 }
 
+/// Give the channels of `md` (from `channels_of`) the speaker separation `md` already carries:
+/// its speaker spans as turns, its `diarization` producers, and whether the channel came out as one
+/// speaker. Composed again they name the same speakers in the same order. Returns the channels
+/// that had one.
+fn carry_diarization(md: &MeetingData, channels: &mut BTreeMap<u32, ChannelInput>) -> BTreeSet<u32> {
+    let mut carried = BTreeSet::new();
+    for (&ch, input) in channels.iter_mut() {
+        if carry_channel(md, ch, input, false) {
+            carried.insert(ch);
+        }
+    }
+    carried
+}
+
+/// `carry_diarization` for one channel; false (the channel untouched) when `md` has no separation
+/// for it. `reuse`: for a batch draft over the same audio. Only a separation the live session made
+/// (`params.live` true) is taken, and its producers name the version they came from
+/// (`params.reused_from`).
+fn carry_channel(md: &MeetingData, ch: u32, input: &mut ChannelInput, reuse: bool) -> bool {
+    let mut producers: Vec<Value> = md
+        .version
+        .producers
+        .iter()
+        .filter(|p| p["role"] == "diarization" && p["channels"].get(0).and_then(Value::as_u64) == Some(u64::from(ch)))
+        .filter(|p| !reuse || p["params"]["live"] == true)
+        .cloned()
+        .collect();
+    if producers.is_empty() {
+        return false;
+    }
+    if reuse {
+        for p in &mut producers {
+            if !p["params"].is_object() {
+                p["params"] = json!({});
+            }
+            p["params"]["reused_from"] = json!(md.version.id);
+        }
+    }
+    let mut turns: Vec<DiarTurn> = md.speaker_spans.iter().filter(|s| s.channel == ch).map(|s| DiarTurn { start_ms: s.start_ms, end_ms: s.end_ms, speaker: s.speaker.clone() }).collect();
+    turns.sort_by(|a, b| (a.start_ms, a.end_ms, &a.speaker).cmp(&(b.start_ms, b.end_ms, &b.speaker)));
+    input.single_speaker = !md.speakers.iter().any(|s| s.channel == ch && s.basis == Basis::Diarization);
+    input.diarization = Some(Diarization { turns });
+    input.producers.extend(producers);
+    true
+}
+
 /// Make the first draft of a meeting from its `live` version, so the live captions can be reviewed,
 /// approved and given to plugins without a batch transcription. The draft's parent is the live
 /// version and its producers are the live engine's own (role `asr`, `word_timing` transducer,
@@ -283,7 +370,9 @@ pub fn channels_of(md: &MeetingData) -> Result<BTreeMap<u32, ChannelInput>> {
 ///
 /// Without `diar` the draft is the live content unchanged. With `diar` each channel is separated
 /// into speakers like a batch draft (`with_diarization`); a channel whose separation fails keeps its
-/// one speaker and adds a warning. Idempotent: a draft already made from this live version is
+/// one speaker and adds a warning. A channel the live session already separated (its live version
+/// has a `diarization` producer for it, see `live::store_live`) keeps those speakers and is not
+/// separated again; when every channel has them the draft is the live content unchanged. Idempotent: a draft already made from this live version is
 /// returned without running anything; a meeting that already has another draft or an approval is
 /// refused with `StaleDraft` (see `Store::create_draft_from`).
 ///
@@ -313,12 +402,17 @@ pub fn draft_from_live(
         return Ok(Transcribed { data: create(live)?, warnings: vec![] });
     };
     let mut channels = channels_of(&live)?;
+    // channels the live session already separated keep those speakers: no second pass
+    let carried = carry_diarization(&live, &mut channels);
+    if carried.len() == channels.len() {
+        return Ok(Transcribed { data: create(live)?, warnings: vec![] });
+    }
     let mut warnings = Vec::new();
     // only the channels the live version has are separated: one without captions has no words to give speakers
     // progress names the real channel out of all of them, as the batch path does
     let all = store.channel_files(&row.meeting_id)?;
     let total = all.len() as u32;
-    let files: Vec<_> = all.into_iter().filter(|f| channels.contains_key(&f.index)).collect();
+    let files: Vec<_> = all.into_iter().filter(|f| channels.contains_key(&f.index) && !carried.contains(&f.index)).collect();
     for f in &files {
         if cancel.load(Ordering::SeqCst) {
             return Err(Error::Cancelled);
@@ -360,6 +454,12 @@ pub fn draft_from_live(
 /// Run a registered plugin on a stored version and store the result. Refuses when the
 /// plugin's code or manifest no longer matches what was added.
 pub fn run_plugin(store: &Store, plugin_id: &str, version_id: &str, timeout: Duration) -> Result<i64> {
+    run_plugin_with(store, &*crate::secrets::system(), plugin_id, version_id, timeout)
+}
+
+/// `run_plugin` reading the plugin's declared secrets from `secrets` (see `crate::secrets::for_run`):
+/// only this plugin's, for its recorded origin, only for this run.
+pub fn run_plugin_with(store: &Store, secrets: &dyn crate::secrets::SecretStore, plugin_id: &str, version_id: &str, timeout: Duration) -> Result<i64> {
     let (row, manifest) = store.plugin(plugin_id)?;
     let manifest_now = std::fs::read(row.dir.join("meetko.toml")).map(|b| util::sha256_bytes(&b))?;
     if manifest_now != row.manifest_sha256 || plugin_code_sha256(&manifest, &row.dir)? != row.code_sha256 {
@@ -369,7 +469,8 @@ pub fn run_plugin(store: &Store, plugin_id: &str, version_id: &str, timeout: Dur
     }
     let raw = store.version_raw(version_id)?; // the plugin gets the document as stored
     let iso = crate::sandbox::Isolation::production(store.dir());
-    let (out, sandbox) = crate::host::run_once_with(&manifest, &row.dir, &raw, timeout, &iso)?;
+    let given = crate::secrets::for_run(secrets, plugin_id, &crate::secrets::origin_of(store, plugin_id)?, &manifest)?;
+    let (out, sandbox) = crate::host::run_once_with_secrets(&manifest, &row.dir, &raw, timeout, &iso, &given)?;
     store.add_result_sandboxed(&row, version_id, &out, sandbox)
 }
 
@@ -621,6 +722,98 @@ mod tests {
         let (_tmp, s, m, live) = with_live();
         assert!(matches!(draft_from_live(&s, &live, Some(&FakeDiar(true)), &no_progress, &AtomicBool::new(true)), Err(Error::Cancelled)));
         assert_eq!(s.versions_of(&m).unwrap().len(), 1);
+    }
+
+    // ---------------------------------------------------------------- batch over live speakers
+
+    /// Two words per channel, the same on every run.
+    struct FakeAsr;
+    impl BatchEngine for FakeAsr {
+        fn transcribe(&self, req: &BatchRequest, _progress: &dyn Fn(Progress), _cancel: &AtomicBool) -> Result<Value> {
+            let w = |s: i64, t: &str| json!({"start_ms": s, "end_ms": s + 400, "text": t});
+            Ok(json!({"contract": "0.1", "kind": "asr.batch", "engine": {"id": "fake-asr", "version": "1"}, "network": false,
+                      "model": {"id": "fake-model"}, "params": {}, "word_timing": "token", "audio_sha256": req.audio_sha256, "coverage": [{"start_ms": 0, "end_ms": 4375}], "words": [w(1000, "리뷰"), w(3000, "배포")]}))
+        }
+    }
+
+    /// Counts the channels it separates.
+    struct CountingDiar(std::cell::RefCell<Vec<u32>>);
+    impl DiarEngine for CountingDiar {
+        fn diarize(&self, req: &DiarRequest, _cancel: &AtomicBool) -> Result<Value> {
+            self.0.borrow_mut().push(req.channel);
+            Ok(two_speakers(req))
+        }
+        fn min_speaker_ms(&self) -> i64 {
+            0
+        }
+    }
+
+    /// `with_live`, where the live session separated channel 1 into two speakers (as `store_live` does).
+    fn with_live_speakers() -> (tempfile::TempDir, Store, String, String) {
+        let (tmp, s, m, plain_live) = with_live();
+        let md = s.version(&plain_live).unwrap();
+        let mut ch = channels_of(&md).unwrap();
+        let f = s.channel_files(&m).unwrap().into_iter().find(|f| f.index == 1).unwrap();
+        let t = |a: i64, b: i64, sp: &str| json!({"start_ms": a, "end_ms": b, "speaker": sp});
+        let r = json!({"contract": "0.1", "kind": "diarization", "engine": {"id": "nemotron-diar", "version": "0.1.0"}, "network": false,
+                       "audio_sha256": f.sha256, "params": {"mode": "streaming", "live": true}, "turns": [t(900, 2000, "x"), t(2900, 4000, "y")]});
+        with_diarization(ch.get_mut(&1).unwrap(), &r, &f.sha256, md.recording.duration_ms, 1, 0).unwrap();
+        let live = s.create_version(compose(md.meeting.clone(), md.recording.clone(), ("pending".into(), VersionKind::Live), &ch)).unwrap().version.id;
+        (tmp, s, m, live)
+    }
+
+    #[test]
+    fn a_batch_draft_reuses_the_live_speakers_and_separates_only_the_rest() {
+        let (_tmp, s, m, live) = with_live_speakers();
+        let diar = CountingDiar(Default::default());
+        let d = transcribe_reusing(&s, &FakeAsr, Some(&diar), &m, Some(&live), None, &no_progress, &AtomicBool::new(false)).unwrap();
+        assert!(d.warnings.is_empty(), "{:?}", d.warnings);
+        assert_eq!(*diar.0.borrow(), [0], "channel 1 is not separated again");
+        let md = d.data;
+        assert_eq!(md.version.kind, VersionKind::Draft);
+        let labels: Vec<_> = md.speakers.iter().map(|x| (x.channel, x.basis, x.label.clone().unwrap())).collect();
+        assert_eq!(labels, [(0, Basis::Diarization, "나 1".into()), (0, Basis::Diarization, "나 2".into()), (1, Basis::Diarization, "상대 1".into()), (1, Basis::Diarization, "상대 2".into())]);
+        // provenance: the live session made channel 1's speakers, a pass over the file made channel 0's
+        let diar_of = |c: u32| md.version.producers.iter().find(|p| p["role"] == "diarization" && p["channels"] == json!([c])).unwrap().clone();
+        let (p0, p1) = (diar_of(0), diar_of(1));
+        assert_eq!((p1["engine"]["id"].as_str(), p1["params"]["live"].as_bool(), p1["params"]["reused_from"].as_str()), (Some("nemotron-diar"), Some(true), Some(live.as_str())));
+        assert_eq!((p0["engine"]["id"].as_str(), p0["params"].get("reused_from")), (Some("fake-diar"), None));
+        assert!(md.version.producers.iter().filter(|p| p["role"] == "asr").all(|p| p["engine"]["id"] == "fake-asr"));
+        // the batch words take the live turns: 리뷰 (1000) is 상대 1, 배포 (3000) is 상대 2
+        let sp = |t: &str| md.words.iter().find(|w| w.channel == 1 && w.text == t).unwrap().speaker.clone().unwrap();
+        assert_ne!(sp("리뷰"), sp("배포"));
+    }
+
+    #[test]
+    fn without_live_speakers_every_channel_is_separated_as_before() {
+        // no live version given
+        let (_tmp, s, m, live) = with_live_speakers();
+        let diar = CountingDiar(Default::default());
+        let md = transcribe_reusing(&s, &FakeAsr, Some(&diar), &m, None, None, &no_progress, &AtomicBool::new(false)).unwrap().data;
+        assert_eq!(*diar.0.borrow(), [0, 1]);
+        assert!(md.version.producers.iter().all(|p| p["params"].get("reused_from").is_none()));
+        // a live version without live speakers: nothing to reuse
+        let (_tmp2, s2, m2, plain) = with_live();
+        let diar2 = CountingDiar(Default::default());
+        transcribe_reusing(&s2, &FakeAsr, Some(&diar2), &m2, Some(&plain), None, &no_progress, &AtomicBool::new(false)).unwrap();
+        assert_eq!(*diar2.0.borrow(), [0, 1]);
+        // a version that is not this meeting's live version is not a source
+        let draft = transcribe_reusing(&s, &FakeAsr, None, &m, Some(&live), None, &no_progress, &AtomicBool::new(false)).unwrap().data.version.id;
+        let diar3 = CountingDiar(Default::default());
+        transcribe_reusing(&s, &FakeAsr, Some(&diar3), &m, Some(&draft), None, &no_progress, &AtomicBool::new(false)).unwrap();
+        assert_eq!(*diar3.0.borrow(), [0, 1], "a draft's speakers are not live speakers");
+        let rec = s.version(&live).unwrap().recording.sha256;
+        assert!(live_speakers(&s, &live, &m, &rec).unwrap().is_some());
+        assert!(live_speakers(&s, &live, &m, &"0".repeat(64)).unwrap().is_none(), "another recording");
+        assert!(live_speakers(&s, &live, "other-meeting", &rec).unwrap().is_none(), "another meeting");
+    }
+
+    #[test]
+    fn reused_speakers_need_no_diarization_engine() {
+        let (_tmp, s, m, live) = with_live_speakers();
+        let md = transcribe_reusing(&s, &FakeAsr, None, &m, Some(&live), None, &no_progress, &AtomicBool::new(false)).unwrap().data;
+        assert!(md.speakers.iter().any(|x| x.channel == 1 && x.basis == Basis::Diarization));
+        assert!(md.speakers.iter().all(|x| x.channel == 1 || x.basis == Basis::Channel));
     }
 
     /// Reading the channels back and composing them again gives the same words, turns and coverage.

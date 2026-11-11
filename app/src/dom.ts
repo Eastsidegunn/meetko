@@ -48,6 +48,7 @@ const ICONS: Record<string, string> = {
   x: "M4 4 L12 12 M12 4 L4 12",
   folder: "M2.5 4.5 H6.5 L8 6 H13.5 V12.5 H2.5 Z",
   arrowdown: "M8 3 V12 M4.5 8.5 L8 12 L11.5 8.5",
+  arrowup: "M8 13 V4 M4.5 7.5 L8 4 L11.5 7.5",
   info: "M8 2.5 a5.5 5.5 0 1 0 0.01 0 Z M8 7 V11 M8 5 V5.1",
   search: "M7 3 a4 4 0 1 0 0.01 0 Z M10 10 L13 13",
 };

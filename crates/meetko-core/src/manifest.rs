@@ -79,6 +79,15 @@ pub struct Permissions {
     /// enforced by the macOS sandbox only (docs/plugin-security.md); undeclared means no network
     #[serde(default)]
     pub network: bool,
+    /// names of the secrets (API keys) the plugin needs, e.g. `ANTHROPIC_API_KEY` (`*_KEY`,
+    /// `*_TOKEN`, `*_SECRET`). The user sets each value (OS keychain, see `crate::secrets`); a run
+    /// gets the declared ones that are set in its `initialize` request. Requires `network = true`.
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    /// names of plain settings the user may set, e.g. `ANTHROPIC_MODEL` (`*_MODEL`, `*_BASE_URL`):
+    /// stored and passed like secrets, but shown and never redacted. Requires `network = true`.
+    #[serde(default)]
+    pub settings: Vec<String>,
 }
 
 /// `[role]` of an engine manifest
@@ -140,6 +149,7 @@ impl Manifest {
         if !matches!(m.input.audio.as_str(), "none" | "full") {
             return Err(Error::Manifest(format!("input.audio {:?} is not none|full", m.input.audio)));
         }
+        crate::secrets::check_declared(&m.permissions)?;
         Ok(m)
     }
 
@@ -155,6 +165,14 @@ impl Manifest {
             return Err(Error::Manifest(format!(
                 "{} is kind {:?}; only plugins can be added (engine manifests are parsed but not run yet)",
                 self.package.id, self.package.kind
+            )));
+        }
+        // checked here so `info`, `add` and the app's preview refuse before anything is copied
+        if crate::store::agent::is_agent_id(&self.package.id) {
+            return Err(Error::Manifest(format!(
+                "{}: plugin ids starting with {} are reserved for results from AI agents (MCP)",
+                self.package.id,
+                crate::store::agent::AGENT_PREFIX
             )));
         }
         Ok(())
@@ -291,5 +309,37 @@ mod tests {
         let e = Manifest::parse("[package]\nid = \"a\" \u{1b}[31m\u{7}\u{202e} oops\n").unwrap_err().to_string();
         assert!(!e.contains(['\u{1b}', '\u{7}', '\u{202e}']), "{e:?}");
         assert!(e.contains("\\u{1b}"));
+    }
+
+    fn with_permissions(p: &str) -> String {
+        format!("[package]\nid=\"a/b\"\nversion=\"0\"\nkind=\"plugin\"\ncontract=\"0.1\"\n[run]\ncommand=[\"x\"]\nprotocol=\"stdio-jsonrpc\"\n[permissions]\n{p}\n")
+    }
+
+    #[test]
+    fn declared_secrets_are_checked() {
+        let ok = Manifest::parse(&with_permissions("network = true\nsecrets = [\"ANTHROPIC_API_KEY\", \"OPENAI_API_KEY\"]\nsettings = [\"ANTHROPIC_MODEL\"]")).unwrap();
+        assert_eq!(ok.permissions.secrets, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]);
+        assert_eq!(ok.permissions.settings, ["ANTHROPIC_MODEL"]);
+        assert!(Manifest::parse(&with_permissions("settings = [\"ANTHROPIC_MODEL\"]")).is_err(), "settings need network too");
+        assert!(Manifest::parse(&with_permissions("network = true\nsettings = [\"ANTHROPIC_API_KEY\"]")).is_err(), "a key is not a setting");
+        assert!(Manifest::parse(&with_permissions("network = false")).unwrap().permissions.secrets.is_empty());
+        let refused = [
+            "secrets = [\"ANTHROPIC_API_KEY\"]",                     // no network: a key is useless and refused
+            "network = true\nsecrets = [\"anthropic_key\"]",          // lowercase
+            "network = true\nsecrets = [\"A-B\"]",
+            "network = true\nsecrets = [\"PATH\"]",                   // reserved
+            "network = true\nsecrets = [\"DYLD_INSERT_LIBRARIES\"]",
+            "network = true\nsecrets = [\"HTTPS_PROXY\"]",
+            "network = true\nsecrets = [\"PYTHONPATH\"]",
+            "network = true\nsecrets = [\"MEETKO_DATA_DIR\"]",
+            "network = true\nsecrets = [\"A_KEY\", \"A_KEY\"]",      // duplicate
+            "network = true\nsecrets = [\"A1_KEY\", \"A2_KEY\", \"A3_KEY\", \"A4_KEY\", \"A5_KEY\"]", // too many
+            "network = true\nsecrets = [\"ANTHROPIC\"]",            // no key-like ending
+        ];
+        for p in refused {
+            assert!(Manifest::parse(&with_permissions(p)).is_err(), "{p}");
+        }
+        let long = format!("network = true\nsecrets = [\"{}\"]", "A".repeat(65));
+        assert!(Manifest::parse(&with_permissions(&long)).is_err());
     }
 }

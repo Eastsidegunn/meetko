@@ -2,7 +2,7 @@
 // plugin produces points back at words: the play chip seeks, plays the span and highlights it.
 import type { Anchor, PluginItem, ResultView } from "./api";
 import { dateText, h, icon, mmss } from "./dom";
-import { markerKind } from "./labels";
+import { KEYCHAIN_DENIED_RUN, KEYCHAIN_DENIED_WHY, markerKind } from "./labels";
 import type { Model } from "./model";
 
 export interface Failure { plugin_id: string; version?: string; code: string | null; message: string }
@@ -107,7 +107,7 @@ export function renderResults(model: Model, o: ResultsOpts): HTMLElement {
         let txt = "";
         if (r.ok) { // a long block is cut at about 240 characters; the chip plays all of it
           const parts: string[] = [];
-          for (let i = r.i0; i <= r.i1 && parts.join(" ").length < 240; i++) parts.push(model.words[i].text);
+          for (let i = r.i0; i <= r.i1 && parts.join(" ").length < 240; i++) if (model.text(i)) parts.push(model.text(i));
           txt = parts.join(" ") + (r.i1 - r.i0 + 1 > parts.length ? " …" : "");
         }
         return h("div", { class: "ri" }, it.title ? h("div", { class: "ri-h", text: it.title }) : null,
@@ -126,8 +126,18 @@ export function renderResults(model: Model, o: ResultsOpts): HTMLElement {
     // 'no permissions' is said once, in the meta line
     return tags.some(Boolean) ? h("div", { class: "rc-perm" }, ...tags, h("span", { text: isolated ? "선언한 권한 · 격리 안에서 실행됨" : "선언됨 · 강제되지 않음" })) : null;
   }
-  const head = (id: string, version: string, meta: (HTMLElement | null)[], extra: HTMLElement | null = null) =>
-    h("div", { class: "rc-h" }, h("div", { class: "rc-name" }, id, h("span", { text: `@${version}` })), h("div", { class: "rc-meta" }, ...meta), extra);
+  const head = (id: string, version: string | null, meta: (HTMLElement | null)[], ...extra: (HTMLElement | null)[]) =>
+    h("div", { class: "rc-h" }, h("div", { class: "rc-name" }, id, version ? h("span", { text: `@${version}` }) : null), h("div", { class: "rc-meta" }, ...meta), ...extra);
+
+  /** A result an external AI agent stored over MCP: the transcript went to that agent's AI service. */
+  const fromAgent = (r: ResultView) => r.sandbox === "mcp" && r.plugin_id.startsWith("mcp:");
+  // the version-level notice says the transcript may have left the device; the card only names who made it
+  function agentLine(r: ResultView): HTMLElement {
+    const agentName = r.agent?.agent?.name, clientName = r.agent?.client?.name;
+    const who = agentName || clientName ? [agentName, clientName].filter(Boolean).join(" · ") : "기록 없음";
+    return h("div", { class: "rc-perm" }, tag("net", "외부 AI"), h("span", { text: `만든 곳: ${who}` }));
+  }
+  const unknownVersion = (v: string) => (v === "unknown" || v === "" ? null : v);
 
   function card(r: ResultView): HTMLElement {
     const markers = r.output.items.filter((i): i is Extract<PluginItem, { type: "timeline_marker" }> => i.type === "timeline_marker");
@@ -136,6 +146,13 @@ export function renderResults(model: Model, o: ResultsOpts): HTMLElement {
     if (markers.length) body.append(markerGroup(markers));
     if (!r.output.items.length) body.append(h("div", { class: "ri" }, h("span", { class: "ri-sub", text: "결과가 비어 있어요. 실패가 아니라 찾은 것이 없다는 뜻이에요." })));
     const noPerm = !r.declared_network && r.declared_audio === "none";
+    if (fromAgent(r)) {
+      return h("article", { class: `rc${r.stale ? " stale" : ""}` },
+        head(r.plugin_id, unknownVersion(r.plugin_version), [
+          h("span", { text: dateText(r.created_at) }),
+          r.stale ? h("span", { class: "stale-t", text: "오래됨" }) : h("span", { class: "fresh", text: "최신" })],
+        agentLine(r)), body);
+    }
     return h("article", { class: `rc${r.stale ? " stale" : ""}` },
       head(r.plugin_id, r.plugin_version, [
         h("span", { text: dateText(r.created_at) }),
@@ -149,12 +166,14 @@ export function renderResults(model: Model, o: ResultsOpts): HTMLElement {
   // what needs attention comes first: failed output, then the running plugin, then stored results
   for (const f of o.failures) {
     const rejected = f.code === "invalid_data" || f.code === "bad_engine_output"; // the contract refused its output
+    const keychain = f.code === "secret_access_denied"; // the plugin was not started: the Mac did not hand over its key
     wrap.append(h("article", { class: "rc" },
       h("div", { class: "rc-h" }, h("div", { class: "rc-name" }, f.plugin_id, f.version ? h("span", { text: `@${f.version}` }) : null),
-        h("div", { class: "rc-meta" }, h("span", { class: "tag-danger", text: rejected ? "출력 거부됨" : "실행 실패" }), h("span", { text: "저장되지 않았어요" }))),
+        h("div", { class: "rc-meta" }, h("span", { class: "tag-danger", text: rejected ? "출력 거부됨" : keychain ? "키를 못 꺼냄" : "실행 실패" }), h("span", { text: "저장되지 않았어요" }))),
       h("div", { class: "rej", role: "alert" },
-        h("div", { text: rejected ? "플러그인이 계약에 맞지 않는 결과를 돌려줘서 받지 않았어요. 이전 결과는 그대로예요." : "플러그인을 끝까지 실행하지 못했어요. 이전 결과는 그대로예요." }),
-        h("div", { class: "mono", text: f.message }),
+        h("div", { text: rejected ? "플러그인이 계약에 맞지 않는 결과를 돌려줘서 받지 않았어요. 이전 결과는 그대로예요."
+          : keychain ? KEYCHAIN_DENIED_RUN : "플러그인을 끝까지 실행하지 못했어요. 이전 결과는 그대로예요." }),
+        keychain ? h("div", { class: "c-2", text: KEYCHAIN_DENIED_WHY }) : h("div", { class: "mono", text: f.message }),
         h("div", {}, h("button", { type: "button", class: "btn", text: "다시 실행", onclick: () => o.rerun(f.plugin_id) })))));
   }
   if (o.running) wrap.append(h("article", { class: "rc" }, head(o.running.id, o.running.version, []),

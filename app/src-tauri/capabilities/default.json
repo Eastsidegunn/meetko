@@ -25,6 +25,9 @@
     "allow-plugin-run",
     "allow-list-results",
     "allow-list-stale",
+    "allow-plugin-secrets",
+    "allow-plugin-secret-set",
+    "allow-plugin-secret-clear",
     "allow-gallery-list",
     "allow-gallery-preview",
     "allow-gallery-install",
@@ -38,6 +41,21 @@
     "allow-model-download",
     "allow-model-pick",
     "allow-model-cancel",
-    "allow-setup-card-dismiss"
+    "allow-setup-card-dismiss",
+    "allow-batch-engine-set",
+    "allow-auto-retranscribe-set",
+    "allow-overlay-get",
+    "allow-speaker-rename",
+    "allow-speaker-merge",
+    "allow-speaker-reset",
+    "allow-turn-edit",
+    "allow-turn-reset",
+    "allow-overlay-discard",
+    "allow-vocabulary-get",
+    "allow-vocabulary-set",
+    "allow-vocabulary-preview",
+    "allow-vocabulary-import",
+    "allow-vocabulary-export",
+    "allow-vocabulary-display"
   ]
 }

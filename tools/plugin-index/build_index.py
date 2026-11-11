@@ -55,6 +55,24 @@ ID_RE = re.compile(r"^([a-z0-9][a-z0-9_.-]{0,63})/([a-z0-9][a-z0-9_.-]{0,63})$")
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}/[A-Za-z0-9._-]{1,100}$")
+# [permissions] secrets / settings: the same rules as crates/meetko-core/src/secrets.rs
+# (valid_secret_name, valid_setting_name, check_declared)
+NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+MAX_SECRETS = 4
+MAX_SETTINGS = 4
+SECRET_SUFFIX = ("_KEY", "_TOKEN", "_SECRET")
+SETTING_SUFFIX = ("_BASE_URL", "_MODEL")
+NAME_RESERVED = {
+    "HOME", "PATH", "TMPDIR", "TEMP", "TMP", "USER", "LOGNAME", "SHELL", "LANG", "TZ", "TZDIR", "TERM", "USERPROFILE",
+    "SYSTEMROOT", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA", "IFS", "ENV", "BASH_ENV", "DEVELOPER_DIR", "SDKROOT",
+    "TOOLCHAINS", "SSLKEYLOGFILE", "CLASSPATH", "JDK_JAVA_OPTIONS", "VIRTUAL_ENV", "ZDOTDIR", "SHELLOPTS", "BASHOPTS",
+    "PS4", "CDPATH", "GCONV_PATH", "HOSTALIASES", "RES_OPTIONS", "LOCALDOMAIN", "NLSPATH",
+}
+NAME_RESERVED_PREFIX = (
+    "DYLD_", "LD_", "PYTHON", "MEETKO_", "LC_", "NODE_", "PERL", "RUBY", "JAVA_", "SSL_", "OPENSSL_", "CURL_", "GIT_",
+    "XDG_", "GEM_", "BUNDLE_", "NPM_CONFIG_", "DENO_", "BUN_", "UV_", "CONDA_", "LUA_", "__",
+)
+NAME_RESERVED_SUFFIX = ("_PROXY", "_CA_BUNDLE", "_CA_FILE", "_CA_PATH")
 
 
 class Rejected(Exception):
@@ -181,6 +199,14 @@ def validate_manifest(text: str, owner: str) -> dict:
     network = _table(m, "permissions").get("network", False)
     if not isinstance(network, bool):
         raise Rejected("permissions.network must be true or false")
+    perm = _table(m, "permissions")
+    secrets, settings = _declared(perm.get("secrets", []), perm.get("settings", []), network)
+    permissions = {"network": network, "audio": audio == "full"}
+    # only when declared: entries without keys or settings keep their shape
+    if secrets:
+        permissions["secrets"] = secrets
+    if settings:
+        permissions["settings"] = settings
     return {
         "id": pid,
         "name": pid.split("/", 1)[1],
@@ -188,9 +214,46 @@ def validate_manifest(text: str, owner: str) -> dict:
         "description": description,
         "license": license_,
         "homepage": homepage,
-        "permissions": {"network": network, "audio": audio == "full"},
+        "permissions": permissions,
         "runtime": _runtime(command),
     }
+
+
+def _name_ok(name, suffixes) -> bool:
+    if not (isinstance(name, str) and NAME_RE.match(name)):
+        return False
+    go = name.startswith("GO") and not name.startswith("GOOGLE_")  # Go's own GOPATH, GOFLAGS ...
+    reserved = go or name in NAME_RESERVED or name.startswith(NAME_RESERVED_PREFIX) or name.endswith(NAME_RESERVED_SUFFIX)
+    return any(name.endswith(s) and len(name) > len(s) for s in suffixes) and not reserved
+
+
+def valid_secret_name(name) -> bool:
+    return _name_ok(name, SECRET_SUFFIX)
+
+
+def valid_setting_name(name) -> bool:
+    return _name_ok(name, SETTING_SUFFIX)
+
+
+def _declared(secrets, settings, network: bool):
+    """`[permissions] secrets` and `settings`: distinct valid names (secrets end in _KEY/_TOKEN/_SECRET,
+    settings in _MODEL/_BASE_URL), at most 4 each, only with network = true."""
+    for what, value in (("secrets", secrets), ("settings", settings)):
+        if not isinstance(value, list):
+            raise Rejected(f"permissions.{what} must be an array of names")
+    if not secrets and not settings:
+        return [], []
+    if network is not True:
+        raise Rejected("permissions.secrets and permissions.settings need network = true")
+    for what, value, most, valid, ending in (("secrets", secrets, MAX_SECRETS, valid_secret_name, "_KEY, _TOKEN or _SECRET"), ("settings", settings, MAX_SETTINGS, valid_setting_name, "_MODEL or _BASE_URL")):
+        if len(value) > most:
+            raise Rejected(f"permissions.{what} declares more than {most} names")
+        if not all(valid(n) for n in value):
+            raise Rejected(f"permissions.{what} names must be A-Z, 0-9 and _, start with a letter, end with {ending}, and not be a system variable")
+    both = list(secrets) + list(settings)
+    if len(set(both)) != len(both):
+        raise Rejected("permissions declares a name twice")
+    return list(secrets), list(settings)
 
 
 def make_entry(repo: dict, ref: str, sha: str, facts: dict) -> dict:
@@ -261,8 +324,17 @@ def validate_index(doc: object) -> list[str]:
         if not isinstance(p["stars"], int) or isinstance(p["stars"], bool) or p["stars"] < 0:
             errs.append(f"{where}.stars")
         perm = p["permissions"]
-        if not (isinstance(perm, dict) and set(perm) == {"network", "audio"} and all(isinstance(v, bool) for v in perm.values())):
+        flags_ok = isinstance(perm, dict) and set(perm) - {"secrets", "settings"} == {"network", "audio"} and isinstance(perm["network"], bool) and isinstance(perm["audio"], bool)
+        if not flags_ok:
             errs.append(f"{where}.permissions")
+        elif "secrets" in perm or "settings" in perm:
+            try:
+                sec, st = _declared(perm.get("secrets", []), perm.get("settings", []), perm["network"])
+                # present means declared: never an empty list
+                if ("secrets" in perm and not sec) or ("settings" in perm and not st):
+                    errs.append(f"{where}.permissions")
+            except Rejected:
+                errs.append(f"{where}.permissions")
     return errs
 
 

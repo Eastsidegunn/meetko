@@ -26,6 +26,10 @@
 //!
 //! The same pins, staging and binary lookup serve the batch diarization engine (`crate::diarize`):
 //! a pin carries the `role` of the engine that loads it (default `asr.stream`).
+//!
+//! With a diarization model and engine (`LiveSession::start_with`), each channel also runs a live
+//! speaker separation next to its captions (`diar`): provisional speakers of the caption segments
+//! while recording, and the speakers of the stored live version.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -42,9 +46,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::contract::{compose, engine_result_validator, live_words, schema_errors, ChannelInput, EngineWord, MeetingData, StreamEvent, VersionKind, CONTRACT};
+use crate::diarize::DiarConfig;
 use crate::error::{Error, Result};
 use crate::host::{read_lines, Line};
-use crate::pipeline::batch_channel;
+use crate::pipeline::{batch_channel, with_diarization};
+
+pub mod diar;
+pub use diar::{DiarLive, SegmentSpeaker};
 use crate::store::Store;
 use crate::util::{self, kill_tree, own_process_group};
 
@@ -72,13 +80,20 @@ pub const MAX_EVENTS_PER_SEC: u32 = 200;
 const MAX_HOT_SECONDS: u32 = 2;
 
 /// The engines and the pins of the models each one loads (`engines/<name>/models.toml`).
-const ENGINES: [(&str, &str); 2] = [
+const ENGINES: [(&str, &str); 4] = [
     ("nemotron-stream", include_str!("../../../engines/nemotron-stream/models.toml")),
     ("sherpa-stream", include_str!("../../../engines/sherpa-stream/models.toml")),
+    ("qwen3-asr", include_str!("../../../engines/qwen3-asr/models.toml")),
+    // whisper-cli is the user's program; this file pins only the model data meetko hands to it
+    ("whisper-cpp", include_str!("../../../engines/whisper-cpp/models.toml")),
 ];
 
 pub const ROLE_STREAM: &str = "asr.stream";
 pub const ROLE_DIARIZATION: &str = "diarization";
+/// A batch transcription engine other than whisper-cli (`batch.rs`).
+pub const ROLE_BATCH: &str = "asr.batch";
+/// The voice activity detection model whisper-cli runs before it transcribes (`whisper.rs`).
+pub const ROLE_WHISPER_VAD: &str = "whisper.vad";
 
 /// File name of an engine's binary: `sherpa-stream` -> `meetko-sherpa-stream[.exe]`.
 fn engine_bin(engine: &str) -> String {
@@ -162,6 +177,10 @@ fn stream_role() -> String {
 fn names(role: &str) -> (&'static str, &'static str) {
     if role == ROLE_DIARIZATION {
         ("the diarization model", "MEETKO_DIAR_MODEL")
+    } else if role == ROLE_BATCH {
+        ("the batch transcription model", "MEETKO_BATCH_MODEL")
+    } else if role == ROLE_WHISPER_VAD {
+        ("the whisper VAD model", "MEETKO_WHISPER_VAD_MODEL")
     } else {
         ("the streaming model", "MEETKO_STREAM_MODEL")
     }
@@ -247,7 +266,7 @@ fn decide(role: &str, files: &BTreeMap<String, String>, engine: &'static str, al
 /// sha256 of a file, cached by path hash + size + mtime_ns + inode in a 0600 file (like the
 /// whisper model hash). Only for the cheap pre-flight check: what the engine loads is hashed
 /// from its own private copy (`stage_model`), never taken from this cache.
-fn cached_sha256(path: &Path, cache_path: &Path) -> Result<String> {
+pub(crate) fn cached_sha256(path: &Path, cache_path: &Path) -> Result<String> {
     let meta = std::fs::metadata(path)?;
     let (len, mtime, inode) = crate::whisper::model_stamp(&meta);
     let canon = dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
@@ -666,6 +685,9 @@ pub enum Push {
     Full,
 }
 
+/// Makes an engine's sandbox profile from its private HOME and its absolute binary (`EngineClient::spawn_sandboxed`).
+pub(crate) type MakeProfile<'a> = &'a dyn Fn(&Path, &Path) -> Result<String>;
+
 /// One engine process. Requests are synchronous with a time budget; `stream.push` is a
 /// notification queued to a writer thread, so pushing never blocks the caller.
 pub struct EngineClient {
@@ -685,8 +707,8 @@ pub struct EngineClient {
 
 impl EngineClient {
     /// Start the engine on the (already verified) model directory `model` and run `initialize`.
-    /// `on_event` gets the params of every `stream.event` notification, unvalidated, on the reader
-    /// thread. `abort` is polled while waiting, so a stop during start-up returns quickly.
+    /// `on_event` gets the params of every `stream.event` notification (of an `asr.batch` engine:
+    /// `transcribe.progress`), unvalidated, on the reader thread. `abort` is polled while waiting, so a stop during start-up returns quickly.
     pub fn spawn(cfg: &LiveConfig, model: &Path, on_event: impl FnMut(Value) + Send + 'static, abort: &dyn Fn() -> bool) -> Result<EngineClient> {
         EngineClient::spawn_bin(&cfg.engine_bin, ("MEETKO_STREAM_MODEL", model), ROLE_STREAM, cfg.queue, on_event, abort)
     }
@@ -694,12 +716,39 @@ impl EngineClient {
     /// Any engine of the NDJSON protocol: `bin` gets `model_env` (variable, verified model path) and
     /// nothing else of the environment, and must answer `initialize` with `role`. `queue` bounds the
     /// requests waiting for its stdin.
-    pub(crate) fn spawn_bin(bin: &Path, model_env: (&str, &Path), role: &str, queue: usize, mut on_event: impl FnMut(Value) + Send + 'static, abort: &dyn Fn() -> bool) -> Result<EngineClient> {
+    pub(crate) fn spawn_bin(bin: &Path, model_env: (&str, &Path), role: &str, queue: usize, on_event: impl FnMut(Value) + Send + 'static, abort: &dyn Fn() -> bool) -> Result<EngineClient> {
+        EngineClient::spawn_sandboxed(bin, None, model_env, role, queue, on_event, abort)
+    }
+
+    /// `spawn_bin`, on macOS optionally under `sandbox-exec -p <profile>` (`batch.rs`); `profile` is made
+    /// from the engine's private HOME and its absolute binary. Every engine runs with that HOME as its
+    /// working directory: a program that looks a name up in the current directory (an empty PATH entry
+    /// does that) finds nothing there that it did not make.
+    pub(crate) fn spawn_sandboxed(
+        bin: &Path,
+        profile: Option<MakeProfile>,
+        model_env: (&str, &Path),
+        role: &str,
+        queue: usize,
+        mut on_event: impl FnMut(Value) + Send + 'static,
+        abort: &dyn Fn() -> bool,
+    ) -> Result<EngineClient> {
         let home = tempfile::Builder::new().prefix("meetko-engine-").tempdir()?;
-        let mut cmd = Command::new(bin);
+        // absolute before the working directory changes (a variable may name a relative path)
+        let bin = dunce::canonicalize(bin).unwrap_or_else(|_| bin.to_path_buf());
+        let model = dunce::canonicalize(model_env.1).unwrap_or_else(|_| model_env.1.to_path_buf());
+        let mut cmd = match profile {
+            Some(make) => {
+                let mut c = Command::new(crate::sandbox::SANDBOX_EXEC);
+                c.arg("-p").arg(make(home.path(), &bin)?).arg(&bin);
+                c
+            }
+            None => Command::new(&bin),
+        };
+        cmd.current_dir(home.path());
         // the engine gets the model directory and nothing else of the environment
         crate::util::sandbox_env(&mut cmd, home.path());
-        cmd.env(model_env.0, model_env.1);
+        cmd.env(model_env.0, &model);
         own_process_group(&mut cmd);
         let mut child = cmd
             .stdin(Stdio::piped())
@@ -725,11 +774,17 @@ impl EngineClient {
         // at most one reply is ever expected: anything else is dropped, never queued
         let (reply_tx, replies) = mpsc::sync_channel::<Value>(2);
         let (dead2, fault2, pending2) = (dead.clone(), fault.clone(), pending.clone());
+        // a batch engine's progress and a diarization session's updates go to `on_event` too
+        let extra = match role {
+            ROLE_BATCH => "transcribe.progress",
+            ROLE_DIARIZATION => "diarize.event",
+            _ => "stream.event",
+        };
         std::thread::spawn(move || {
             for line in line_rx {
                 let Ok(line) = line else { break };
                 let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
-                if msg["method"] == "stream.event" {
+                if msg["method"] == "stream.event" || msg["method"] == extra {
                     on_event(msg["params"].clone());
                 } else if msg["method"] == "stream.error" || msg["method"] == "engine.error" {
                     *fault2.lock().unwrap() = Some(msg["params"]["message"].as_str().unwrap_or("engine error").chars().take(200).collect());
@@ -852,8 +907,13 @@ impl EngineClient {
     /// Queue 16 kHz mono PCM16 for the engine. Never blocks. `Ok(Push::Full)` means the engine
     /// is behind: keep the bytes and retry. `Err` means the engine is gone.
     pub fn push(&self, pcm: &[u8]) -> Result<Push> {
+        self.push_as("stream.push", pcm)
+    }
+
+    /// `push` under another notification name (a diarization session's `diarize.push`).
+    pub fn push_as(&self, method: &str, pcm: &[u8]) -> Result<Push> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(pcm);
-        let msg = json!({ "jsonrpc": "2.0", "method": "stream.push", "params": { "pcm_s16le_b64": b64 } });
+        let msg = json!({ "jsonrpc": "2.0", "method": method, "params": { "pcm_s16le_b64": b64 } });
         match self.to_child.as_ref().map(|tx| tx.try_send(format!("{msg}\n"))) {
             Some(Ok(())) => Ok(Push::Queued),
             Some(Err(TrySendError::Full(_))) => Ok(Push::Full),
@@ -902,6 +962,12 @@ pub enum LiveUpdate {
     },
     /// Quiet: the recording goes on, this channel just has no (more) captions.
     Error { channel: u32, message: String },
+    /// The channel's caption engine has its model loaded and listens: captions follow speech.
+    Ready { channel: u32 },
+    /// Provisional speakers of caption segments, only those that changed. They may change again
+    /// while the live diarization learns; `speaker: None` withdraws a label. Never stored as such:
+    /// the stored live version gets its speakers from the session's final turns.
+    Speakers { channel: u32, labels: Vec<SegmentSpeaker> },
 }
 
 pub type OnUpdate = Arc<dyn Fn(LiveUpdate) + Send + Sync>;
@@ -934,6 +1000,8 @@ pub struct ChannelLive {
 #[derive(Debug, Default)]
 pub struct LiveOutcome {
     pub channels: BTreeMap<u32, ChannelLive>,
+    /// the live speaker separation of each channel, when it ran (`LiveSession::start_with`)
+    pub diar: BTreeMap<u32, DiarLive>,
 }
 
 impl LiveOutcome {
@@ -949,11 +1017,15 @@ struct Flags {
     cancel: AtomicBool,
     /// the finish deadline passed: keep what is folded and end now
     kill: AtomicBool,
+    /// the captions are in and the speaker separation had its extra moment (`DIAR_GRACE`): end it
+    diar_kill: AtomicBool,
 }
 
 pub struct LiveSession {
     flags: Arc<Flags>,
     workers: Vec<JoinHandle<ChannelLive>>,
+    diar_workers: Vec<JoinHandle<DiarLive>>,
+    diar_opened: Vec<Arc<AtomicBool>>,
 }
 
 const CHANNEL_FILES: [(u32, &str); 2] = [(0, "mic.wav"), (1, "loopback.wav")];
@@ -962,20 +1034,76 @@ impl LiveSession {
     /// Start one worker per channel. Returns at once: the engines load their model on their own
     /// threads, and the capture directory may not even exist yet.
     pub fn start(cfg: LiveConfig, capture_dir: &Path, on_update: OnUpdate) -> LiveSession {
-        Self::start_tapped(cfg, capture_dir, on_update, None)
+        Self::start_with(cfg, None, capture_dir, on_update, None)
     }
 
     pub fn start_tapped(cfg: LiveConfig, capture_dir: &Path, on_update: OnUpdate, tap: Option<Tap>) -> LiveSession {
-        let flags = Arc::new(Flags { stop: AtomicBool::new(false), cancel: AtomicBool::new(false), kill: AtomicBool::new(false) });
+        Self::start_with(cfg, None, capture_dir, on_update, tap)
+    }
+
+    /// `start`, and with `diar` a live speaker separation per channel next to the captions
+    /// (`diar::run_channel`): provisional speakers while recording, the stored live version's
+    /// speakers after it. Without `diar` (no model or engine) everything is as without it.
+    pub fn start_with(cfg: LiveConfig, diar: Option<DiarConfig>, capture_dir: &Path, on_update: OnUpdate, tap: Option<Tap>) -> LiveSession {
+        Self::start_lagging(cfg, diar, capture_dir, on_update, tap, diar::MAX_LAG)
+    }
+
+    /// `start_with` and how far a speaker separation may fall behind before it is given up.
+    pub fn start_lagging(cfg: LiveConfig, diar: Option<DiarConfig>, capture_dir: &Path, on_update: OnUpdate, tap: Option<Tap>, max_lag: Duration) -> LiveSession {
+        let flags = Arc::new(Flags { stop: AtomicBool::new(false), cancel: AtomicBool::new(false), kill: AtomicBool::new(false), diar_kill: AtomicBool::new(false) });
         let model = Arc::new(SharedModel::default());
+        let diar_model = Arc::new(SharedModel::new(ROLE_DIARIZATION));
+        let spans: Vec<diar::Spans> = CHANNEL_FILES.iter().map(|_| diar::Spans::default()).collect();
+        // a caption channel is settled once its engine listens or its worker has ended
+        let settled: Vec<Arc<AtomicBool>> = CHANNEL_FILES.iter().map(|_| Arc::default()).collect();
         let workers = CHANNEL_FILES
             .iter()
-            .map(|&(index, name)| {
-                let (cfg, path, flags, on_update, tap, model) = (cfg.clone(), capture_dir.join(name), flags.clone(), on_update.clone(), tap.clone(), model.clone());
-                std::thread::spawn(move || run_channel(&cfg, &model, index, &path, &flags, &on_update, tap))
+            .zip(&spans)
+            .zip(&settled)
+            .map(|((&(index, name), spans), settled)| {
+                let (cfg, path, flags, tap, model, spans, settled) = (cfg.clone(), capture_dir.join(name), flags.clone(), tap.clone(), model.clone(), spans.clone(), settled.clone());
+                let (inner, s2) = (on_update.clone(), settled.clone());
+                let on_update: OnUpdate = Arc::new(move |u| {
+                    if matches!(u, LiveUpdate::Ready { .. }) {
+                        s2.store(true, Ordering::SeqCst);
+                    }
+                    inner(u)
+                });
+                std::thread::spawn(move || {
+                    let c = run_channel(&cfg, &model, index, &path, &flags, &on_update, tap, &spans);
+                    settled.store(true, Ordering::SeqCst);
+                    c
+                })
             })
             .collect();
-        LiveSession { flags, workers }
+        let diar_opened: Vec<Arc<AtomicBool>> = match diar {
+            None => vec![],
+            Some(_) => CHANNEL_FILES.iter().map(|_| Arc::default()).collect(),
+        };
+        let diar_workers = match diar {
+            None => vec![],
+            Some(dcfg) => CHANNEL_FILES
+                .iter()
+                .zip(&spans)
+                .zip(&diar_opened)
+                .map(|((&(index, name), spans), opened)| {
+                    let (dcfg, path, flags, on_update, model, spans) = (dcfg.clone(), capture_dir.join(name), flags.clone(), on_update.clone(), diar_model.clone(), spans.clone());
+                    let signals = diar::Signals { captions: settled.clone(), opened: opened.clone() };
+                    std::thread::spawn(move || {
+                        let d = diar::run_channel(&dcfg, &model, index, &path, &flags, &on_update, &spans, max_lag, &signals);
+                        signals.opened.store(true, Ordering::SeqCst);
+                        d
+                    })
+                })
+                .collect(),
+        };
+        LiveSession { flags, workers, diar_workers, diar_opened }
+    }
+
+    /// Every speaker separation has opened its session or ended (true without one). For tests and
+    /// measurements: the app does not need it.
+    pub fn diar_settled(&self) -> bool {
+        self.diar_opened.iter().all(|o| o.load(Ordering::SeqCst))
     }
 
     /// `finish_within(FINISH_DEADLINE)`.
@@ -986,14 +1114,24 @@ impl LiveSession {
     /// Call after the capture provider has stopped: drain what is left in the files, flush the
     /// engines (final events) and collect the result. When `deadline` passes the engines are
     /// killed and what was folded so far is kept; those channels are covered only as far as their
-    /// last final, so the rest reads as "not transcribed".
+    /// last final, so the rest reads as "not transcribed". A speaker separation that has not
+    /// closed by then is dropped (the draft separates the speakers after the recording instead).
     pub fn finish_within(mut self, deadline: Duration) -> LiveOutcome {
         self.flags.stop.store(true, Ordering::SeqCst);
         let end = Instant::now() + deadline;
-        while self.workers.iter().any(|w| !w.is_finished()) {
+        let mut captions_done: Option<Instant> = None;
+        while self.workers.iter().any(|w| !w.is_finished()) || self.diar_workers.iter().any(|w| !w.is_finished()) {
             if Instant::now() >= end {
                 self.flags.kill.store(true, Ordering::SeqCst);
                 break;
+            }
+            // the captions never wait long for the speakers: once they are in, the separation
+            // gets DIAR_GRACE more, then it is dropped (the draft separates after the recording)
+            if !self.workers.iter().any(|w| !w.is_finished()) {
+                let at = *captions_done.get_or_insert_with(Instant::now);
+                if at.elapsed() >= diar::DIAR_GRACE {
+                    self.flags.diar_kill.store(true, Ordering::SeqCst);
+                }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -1001,6 +1139,11 @@ impl LiveSession {
         for w in std::mem::take(&mut self.workers) {
             if let Ok(c) = w.join() {
                 out.channels.insert(c.index, c);
+            }
+        }
+        for w in std::mem::take(&mut self.diar_workers) {
+            if let Ok(d) = w.join() {
+                out.diar.insert(d.index, d);
             }
         }
         out
@@ -1027,7 +1170,17 @@ enum Failure {
     Input(String),
 }
 
-fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, flags: &Flags, on_update: &OnUpdate, tap: Option<Tap>) -> ChannelLive {
+/// Where an accepted event's segment lies: from its start to its last unit, or, for a partial
+/// without units, to the audio fed so far.
+fn segment_span(ev: &Value) -> (i64, i64) {
+    let start = ev["start_ms"].as_i64().unwrap_or(0);
+    let last = ev["units"].as_array().and_then(|u| u.last()).map(|u| u["end_ms"].as_i64().or_else(|| u["start_ms"].as_i64()).unwrap_or(start));
+    let end = last.unwrap_or_else(|| ev["emitted_at_ms"].as_i64().unwrap_or(start));
+    (start, end.max(start))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, flags: &Flags, on_update: &OnUpdate, tap: Option<Tap>, spans: &diar::Spans) -> ChannelLive {
     let folder = Arc::new(Mutex::new(Folder::default()));
     let rejected = Arc::new(Mutex::new((0u32, None::<String>)));
     let bad: Arc<Mutex<Option<String>>> = Arc::default();
@@ -1074,7 +1227,7 @@ fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, f
     res.model_sha256 = Some(staged.check.digest.clone());
     res.model_pinned = staged.check.pinned;
 
-    let (f2, r2, b2, cb) = (folder.clone(), rejected.clone(), bad.clone(), on_update.clone());
+    let (f2, r2, b2, cb, sp) = (folder.clone(), rejected.clone(), bad.clone(), on_update.clone(), spans.clone());
     let mut guard = Guard::default();
     let started = EngineClient::spawn(
         cfg,
@@ -1104,6 +1257,9 @@ fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, f
                     return;
                 }
                 drop(f);
+                if let Some(seg) = ev["segment"].as_i64() {
+                    sp.lock().unwrap().insert(seg, segment_span(&ev)); // bounded with the folder
+                }
                 if let Some(t) = &tap {
                     t(index, &ev);
                 }
@@ -1132,7 +1288,10 @@ fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, f
     res.engine = Some(engine.info["engine"].clone());
     res.model = Some(engine.info["model"].clone());
     match engine.call_with("stream.open", json!({ "sample_rate": 16000, "language": cfg.language }), OPEN_TIMEOUT, &abort_loading) {
-        Ok(r) => res.params = r.get("params").cloned().unwrap_or_else(|| json!({})),
+        Ok(r) => {
+            res.params = r.get("params").cloned().unwrap_or_else(|| json!({}));
+            on_update(LiveUpdate::Ready { channel: index });
+        }
         Err(Error::Cancelled) => return res,
         Err(e) => {
             res.error = Some(e.to_string());
@@ -1273,12 +1432,76 @@ fn run_channel(cfg: &LiveConfig, model: &SharedModel, index: u32, path: &Path, f
 
 // ---------------------------------------------------------------- the stored version
 
+/// The sha256 of a whole stored channel file, and the length and sha256 of its PCM: what a
+/// `WavTail` reads from it (everything after the header, in whole samples).
+fn file_and_pcm_sha256(path: &Path) -> Result<(String, u64, String)> {
+    use sha2::Digest;
+    let mut f = std::fs::File::open(path)?;
+    let len = f.metadata()?.len();
+    let mut head = vec![0u8; len.min(4096) as usize];
+    f.read_exact(&mut head)?;
+    let off = parse_wav_header(&head)?.ok_or_else(|| Error::Corrupt("the channel file has no complete header".into()))?;
+    let pcm_end = off + (len.saturating_sub(off) & !1);
+    f.seek(SeekFrom::Start(0))?;
+    let (mut whole, mut pcm) = (sha2::Sha256::default(), sha2::Sha256::default());
+    let (mut pos, mut buf) = (0u64, vec![0u8; 1 << 20]);
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        whole.update(&buf[..n]);
+        let (a, b) = (pos.clamp(off, pcm_end), (pos + n as u64).clamp(off, pcm_end));
+        pcm.update(&buf[(a - pos) as usize..(b - pos) as usize]);
+        pos += n as u64;
+    }
+    Ok((util::hex(&whole.finalize()), pcm_end - off, util::hex(&pcm.finalize())))
+}
+
+/// The final result of a channel's live speaker separation as a `diarization` engine result of
+/// the stored channel file, or `None` when it cannot be one: the session failed or was cut off, or
+/// it was not fed exactly the stored file's audio. The session read the provider's file as it
+/// grew, so the turns are attached under the sha256 import recorded for that file only when the
+/// file still has that sha256 and the PCM fed to the engine is byte for byte the file's PCM (same
+/// length, same sha256), and the engine says it was fed that much. The model is the copy the core
+/// staged, as for the batch pass.
+fn live_diarization(d: &DiarLive, f: &crate::store::ChannelFile) -> Option<Value> {
+    let mut r = d.result.clone().filter(|r| d.complete && r.is_object())?;
+    let (file_sha, pcm_len, pcm_sha) = file_and_pcm_sha256(&f.path).ok()?;
+    if file_sha != f.sha256 || pcm_len != d.fed_bytes || d.fed_sha256.as_deref() != Some(pcm_sha.as_str()) {
+        return None;
+    }
+    if r["params"]["fed_ms"].as_i64() != Some((d.fed_bytes / 32) as i64) {
+        return None; // the engine counted other audio than the core sent
+    }
+    r["audio_sha256"] = json!(f.sha256);
+    if !r["model"].is_object() {
+        r["model"] = json!({ "id": "unknown" });
+    }
+    if let Some(sha) = &d.model_sha256 {
+        r["model"]["sha256"] = json!(sha);
+    }
+    if !r["params"].is_object() {
+        r["params"] = json!({});
+    }
+    r["params"]["model_pinned"] = json!(d.model_pinned);
+    r["params"]["live"] = json!(true); // provenance: made during the recording, not by a pass over the file
+    Some(r)
+}
+
 /// Build and store the `live` version of an imported meeting from what the engines produced.
 /// `Ok(None)` when no engine ran at all (nothing to record). A channel whose engine died is
 /// covered only as far as its last final, so the gap reads as "not transcribed", never as silence.
+///
+/// A channel whose live speaker separation completed gets its speakers here, through the same
+/// `with_diarization` + compose as a batch draft (producer role `diarization`, `params.mode`
+/// streaming, `params.live` true), so its first draft needs no second pass. Speakers never cost
+/// the captions: a result that does not fit, or a version that does not store with it, is stored
+/// without them and the draft separates the speakers after the recording as before.
 pub fn store_live(store: &Store, meeting_id: &str, outcome: &LiveOutcome, chunk_ms: usize) -> Result<Option<MeetingData>> {
     let (meeting, recording, files) = store.meeting_and_recording(meeting_id)?;
     let mut channels = BTreeMap::new();
+    let mut plain = BTreeMap::new();
     for f in &files {
         let Some(c) = outcome.channels.get(&f.index).filter(|c| c.engine.is_some()) else { continue };
         let evs: Vec<StreamEvent> = c.events.iter().filter_map(|e| serde_json::from_value(e.clone()).ok()).collect();
@@ -1302,14 +1525,23 @@ pub fn store_live(store: &Store, meeting_id: &str, outcome: &LiveOutcome, chunk_
                 result["model"]["sha256"] = json!(sha); // canonical digest over the model files, see `model_digest`
             }
         }
-        let ci: ChannelInput = batch_channel(&result, f.index, &f.role, f.label.as_deref(), f.coverage.as_deref())?;
+        let mut ci: ChannelInput = batch_channel(&result, f.index, &f.role, f.label.as_deref(), f.coverage.as_deref())?;
+        plain.insert(f.index, ci.clone());
+        if let Some((d, r)) = outcome.diar.get(&f.index).and_then(|d| live_diarization(d, f).map(|r| (d, r))) {
+            // on failure the channel is left as it was: its speakers come from the draft's pass
+            let _ = with_diarization(&mut ci, &r, &f.sha256, recording.duration_ms, f.index, d.min_speaker_ms);
+        }
         channels.insert(f.index, ci);
     }
     if channels.is_empty() {
         return Ok(None);
     }
-    let md = compose(meeting, recording, ("pending".into(), VersionKind::Live), &channels);
-    Ok(Some(store.create_version(md)?))
+    let version = || ("pending".to_string(), VersionKind::Live);
+    let md = compose(meeting.clone(), recording.clone(), version(), &channels);
+    match store.create_version(md) {
+        Err(e) if channels.values().any(|c| c.diarization.is_some()) && !matches!(e, Error::Cancelled) => Ok(Some(store.create_version(compose(meeting, recording, version(), &plain))?)),
+        r => Ok(Some(r?)),
+    }
 }
 
 #[cfg(all(test, unix))]

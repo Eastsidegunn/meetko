@@ -5,6 +5,7 @@
 import { api, asError, type MeetingWatch, type Setup, type Status } from "../api";
 import { announce, h, notice } from "../dom";
 import { onStatus, recheck, setupSection } from "../setup";
+import { vocabularySection } from "../vocabulary";
 
 export function settingsScreen(main: HTMLElement, status: Status, onCleanup: (f: () => void) => void = () => {}): void {
   const row = (k: string, s: Setup) =>
@@ -29,6 +30,7 @@ export function settingsScreen(main: HTMLElement, status: Status, onCleanup: (f:
       files),
     h("div", {}, again), result,
     meetingSection(),
+    vocabularySection(onCleanup),
     // license notice (AGPL section 5(d)): plain text, the app has no way to open external links
     h("p", { class: "c-3 t-caption", text: `meetko ${__APP_VERSION__} · AGPL-3.0-or-later · 보증 없음 · 소스 코드: github.com/Eastsidegunn/meetko` }));
   main.replaceChildren(h("div", { class: "page" }, h("div", { class: "page-in" }, h("div", { class: "page-head" }, h("h1", { class: "t-title1", text: "설정" })), set)));

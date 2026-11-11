@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vocabulary-display"
+description = "Enables the vocabulary_display command without any pre-configured scope."
+commands.allow = ["vocabulary_display"]
+
+[[permission]]
+identifier = "deny-vocabulary-display"
+description = "Denies the vocabulary_display command without any pre-configured scope."
+commands.deny = ["vocabulary_display"]

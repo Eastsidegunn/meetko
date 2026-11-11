@@ -1,5 +1,6 @@
-# Batch diarization engine (role diarization), the second binary of this crate. Run by the core after
-# batch ASR, one process per transcription, serving every channel. Protocol: README in this directory.
+# Diarization engine (role diarization), the second binary of this crate. Run by the core after
+# batch ASR, one process per transcription, serving every channel; and while a capture records, one
+# live session per channel. Protocol: README in this directory.
 [package]
 id = "meetko/nemotron-diar"
 version = "0.1.0"

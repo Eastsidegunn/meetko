@@ -1,11 +1,99 @@
-import { api, asError, type GalleryEntry, type PluginInfo } from "../api";
+import { api, asError, type GalleryEntry, type PluginInfo, type SecretState } from "../api";
 import { h, hashBtn, icon, notice } from "../dom";
+import { KEYCHAIN_DENIED_CHANGE } from "../labels";
 import { openDialog } from "../pop";
 
+/** Object particle for a Korean label: 을 after a final consonant, 를 after a vowel. */
+function obj(label: string): string {
+  const c = label.charCodeAt(label.length - 1);
+  if (c >= 0xac00 && c <= 0xd7a3) return `${label}${(c - 0xac00) % 28 ? "을" : "를"}`;
+  return `${label}을(를)`;
+}
+
+/** "이 플러그인은 API 키(A, B)와 네트워크를 써요" — said before every install of a plugin that declares keys. */
+export function keyNotice(secrets: string[]): HTMLElement | null {
+  if (!secrets.length) return null;
+  return notice("warn", `이 플러그인은 API 키(${secrets.join(", ")})와 네트워크를 써요.`,
+    "키는 설치한 뒤 플러그인 화면의 'API 키 넣기'에서 넣어요. 키는 이 플러그인에만, 실행할 때만 건네져요. 키를 받은 플러그인은 회의 전사본을 키의 서비스로 보낼 수 있고, 키를 다른 용도로 쓸 수도 있어요. 믿는 플러그인에만 키를 넣으세요.");
+}
+
+/** Known vendors by name prefix, so a row says in plain Korean what the value is for. */
+const VENDORS: [string, string][] = [["ANTHROPIC_", "Anthropic(Claude)"], ["OPENAI_", "OpenAI 호환"], ["GOOGLE_", "Google"], ["GEMINI_", "Google Gemini"], ["MISTRAL_", "Mistral"], ["GROQ_", "Groq"]];
+
+/** "Anthropic(Claude) API 키", "OpenAI 호환 서버 주소", "Anthropic(Claude) 모델 이름"; unknown names stay as they are. */
+export function secretLabel(name: string): string {
+  const vendor = VENDORS.find(([p]) => name.startsWith(p))?.[1];
+  const what = name.endsWith("_BASE_URL") ? "서버 주소" : name.endsWith("_MODEL") ? "모델 이름" : name.endsWith("_TOKEN") ? "토큰" : "API 키";
+  return vendor ? `${vendor} ${what}` : name;
+}
+
+/** A key dialog failure in plain Korean when the Mac's keychain said no; anything else as the core said it. */
+function keyErrorText(e: unknown): string {
+  const err = asError(e);
+  return err.code === "secret_access_denied" ? KEYCHAIN_DENIED_CHANGE : err.message;
+}
+
+/** Set or remove the declared keys and settings of an installed plugin. Keys go one way, to the OS
+ *  keychain: this dialog only ever learns 설정됨 / 없음. Settings (a model name, a server address) are
+ *  not secret and show their value. */
+function openKeys(p: PluginInfo): void {
+  openDialog(`${p.id} API 키`, (dlg, close) => {
+    const rows = h("div", { class: "secrets" });
+    const msg = h("div", { role: "alert" });
+    const said = h("p", { class: "c-2 sec-said", role: "status", "aria-live": "polite" });
+    /** `focus`: the name whose row should hold focus after a re-render (the row the user just used) */
+    const render = (states: SecretState[], focus?: string) => {
+      rows.replaceChildren(...states.map((s) => {
+        const id = `sec-${s.name}`;
+        const secret = s.kind === "secret";
+        const input = h("input", {
+          id, type: secret ? "password" : "text", class: "sec-input", autocomplete: "off", spellcheck: "false",
+          placeholder: secret ? (s.set ? "새 값으로 바꾸기" : "값 붙여넣기") : (s.set ? "" : "비워 두면 기본값"),
+        }) as HTMLInputElement;
+        if (!secret && s.value) input.value = s.value;
+        const save = h("button", { type: "button", class: "btn btn-primary", text: "저장", disabled: true }) as HTMLButtonElement;
+        const del = s.set ? h("button", { type: "button", class: "btn", text: "지우기" }) as HTMLButtonElement : null;
+        input.addEventListener("input", () => { save.disabled = !input.value.trim() || (!secret && input.value.trim() === (s.value ?? "")); });
+        const run = async (f: () => Promise<SecretState[]>, ok: string, fail: string) => {
+          msg.replaceChildren(); said.textContent = "";
+          save.disabled = true; if (del) del.disabled = true;
+          try { render(await f(), s.name); said.textContent = ok; }
+          catch (e) { msg.append(notice("danger", fail, keyErrorText(e))); save.disabled = !input.value.trim(); if (del) del.disabled = false; input.focus(); }
+        };
+        const label = secretLabel(s.name);
+        const submit = () => {
+          const v = input.value.trim();
+          if (!v || save.disabled) return;
+          if (secret) input.value = ""; // the field never keeps a key once it is sent
+          void run(() => api.pluginSecretSet(p.id, s.name, v), `${obj(label)} 저장했어요.`, "저장하지 못했어요.");
+        };
+        save.addEventListener("click", submit);
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+        del?.addEventListener("click", () => void run(() => api.pluginSecretClear(p.id, s.name), `${obj(label)} 지웠어요.`, "지우지 못했어요."));
+        const state = secret ? (s.set ? "설정됨" : "없음") : (s.set ? "설정됨" : "기본값");
+        const row = h("div", { class: "secrow" },
+          h("label", { for: id, class: "lb" }, h("span", { class: "svc", text: label }), label !== s.name ? h("span", { class: "nm", text: s.name }) : null),
+          h("span", { class: s.set ? "st tag-ok" : "st", text: state }),
+          input, h("div", { class: "secacts" }, del, save));
+        if (focus === s.name) queueMicrotask(() => input.focus({ preventScroll: true }));
+        return row;
+      }));
+    };
+    dlg.append(h("h2", { text: "API 키 넣기" }),
+      h("div", { class: "addbox" },
+        h("p", { class: "c-2", text: `${p.id}에만 쓰여요. 키는 이 컴퓨터의 키체인에 저장되고, 저장한 뒤에는 화면에 다시 보이지 않아요. 플러그인을 실행할 때만 건네져요. 모델 이름과 서버 주소는 키가 아니라서 그대로 보여요.` }),
+        h("p", { class: "c-2", text: "여기서 저장하면 실행할 때 맥이 따로 묻지 않아요. 명령줄(meetko plugin secret set)로 저장한 키는 이 앱이 처음 쓸 때 맥이 키체인 사용을 허락할지 물을 수 있어요. 그 창이 묻는 암호는 이 맥에 로그인할 때 쓰는 암호예요. 넣은 뒤 ‘항상 허용’을 누르면 다음부터 묻지 않아요. 앱을 새로 설치하거나 업데이트한 뒤에는 한 번 더 물을 수 있어요." }),
+        msg, rows, said),
+      h("div", { class: "acts" }, h("button", { type: "button", class: "btn", text: "닫기", onclick: close })));
+    api.pluginSecrets(p.id).then((st) => render(st, st[0]?.name), (e) => msg.append(notice("danger", "키 상태를 읽지 못했어요.", keyErrorText(e))));
+  });
+}
+
 /** The permissions as the plugin declared them. meetko 0.1 does not enforce them, and says so. */
-export function permTags(p: { network: boolean; audio: string }): HTMLElement[] {
+export function permTags(p: { network: boolean; audio: string; secrets?: string[] }): HTMLElement[] {
   const tags = [
     p.network ? h("span", { class: "tag tag-warn" }, icon("net", 12), "네트워크") : null,
+    p.secrets?.length ? h("span", { class: "tag tag-warn", title: p.secrets.join(", ") }, "API 키") : null,
     p.audio !== "none" ? h("span", { class: "tag tag-warn" }, icon("wave", 12), "오디오") : null,
   ].filter((t): t is HTMLElement => !!t);
   return tags.length ? tags : [h("span", { class: "c-3", text: "없음" })];
@@ -34,7 +122,9 @@ export async function pluginsScreen(main: HTMLElement): Promise<void> {
       ...ps.map((p) => h("div", { class: "pgrow" },
         h("div", { class: "pn" }, h("span", { class: "nm", text: p.id, title: p.id }), h("span", { class: "vv", text: `@${p.version}` }), p.description ? h("small", { text: p.description }) : null, p.source ? h("small", { text: p.source }) : null),
         h("div", { class: "perms" }, ...permTags(p)),
-        h("div", { class: "decl", text: p.isolated ? "격리됨 · 네트워크는 선언했을 때만" : "선언됨 · 강제되지 않음" }))));
+        h("div", { class: "decl" },
+          h("span", { text: p.isolated ? "격리됨 · 네트워크는 선언했을 때만" : "선언됨 · 강제되지 않음" }),
+          p.secrets.length || p.settings.length ? h("button", { type: "button", class: "btn keys-btn", text: "API 키 넣기", onclick: () => openKeys(p) }) : null))));
   };
 
   /** pick (native folder dialog; the path never reaches JS) -> confirm with permissions and hashes -> add */
@@ -69,6 +159,8 @@ export async function pluginsScreen(main: HTMLElement): Promise<void> {
           h("dl", { class: "kv" },
             h("dt", { text: "네트워크" }), h("dd", {}, plugin.network ? h("span", { class: "tag-warn", text: "요청함" }) : "요청 안 함"),
             h("dt", { text: "오디오" }), h("dd", { text: plugin.audio === "none" ? "요청 안 함" : plugin.audio }),
+            h("dt", { text: "API 키" }), h("dd", {}, plugin.secrets.length ? h("span", { class: "tag-warn", text: plugin.secrets.join(", ") }) : "요청 안 함"),
+            plugin.settings.length ? [h("dt", { text: "설정" }), h("dd", { text: plugin.settings.join(", ") })] : null,
             h("dt", { text: "표시 형식" }), h("dd", { text: plugin.display.join(", ") || "—" }),
             h("dt", { text: "manifest" }), h("dd", {}, hashBtn(plugin.manifest_sha256)),
             h("dt", { text: "코드 해시" }), h("dd", {}, hashBtn(plugin.code_sha256))),
@@ -78,6 +170,9 @@ export async function pluginsScreen(main: HTMLElement): Promise<void> {
               h("dt", { text: "지금 설치됨" }), h("dd", { text: `${plugin.id}@${rep.version} · ${rep.source ?? "내 컴퓨터의 폴더"}` }),
               h("dt", { text: "새로 설치됨" }), h("dd", { text: `${plugin.id}@${plugin.version} · ${plugin.source ?? plugin.folder}` })),
             h("label", { for: "replace-sure" }, sure, " 위 내용을 확인했고, 기존 플러그인을 교체합니다")) : null,
+          keyNotice(plugin.secrets),
+          plugin.keeps_values ? h("p", { class: "c-2", text: "이미 설치된 같은 플러그인을 다시 추가하는 거라, 저장해 둔 API 키와 설정은 그대로 써요." }) : null,
+          rep && (plugin.secrets.length || plugin.settings.length) ? h("p", { class: "c-2", text: "교체하면 기존 플러그인에 저장해 둔 API 키와 설정은 넘어가지 않고 지워져요." }) : null,
           plugin.source ? notice("warn", "이 플러그인은 검증되지 않았습니다.", "누구나 올릴 수 있는 인터넷의 코드이고, 둘러보기 목록은 사람이 검토한 것이 아니에요. 내려받은 파일을 그대로(빌드 없이) 실행해요. 위 커밋에 고정되어 설치돼요.") : null,
           plugin.isolated
             ? notice("warn", "이 플러그인은 격리된 상태로 실행돼요. 그래도 믿는 코드만 추가하세요.",
@@ -119,7 +214,7 @@ export async function pluginsScreen(main: HTMLElement): Promise<void> {
           h("div", { class: "pn" }, h("span", { class: "nm", text: g.id, title: g.id }), h("span", { class: "vv", text: `@${g.version}` }),
             g.description ? h("small", { text: g.description }) : null,
             h("small", { text: `github.com/${g.repo} · ${g.ref} · ★${g.stars}${g.license ? ` · ${g.license}` : ""}` })),
-          h("div", { class: "perms" }, ...permTags({ network: g.permissions.network, audio: g.permissions.audio ? "full" : "none" })),
+          h("div", { class: "perms" }, ...permTags({ network: g.permissions.network, audio: g.permissions.audio ? "full" : "none", secrets: g.permissions.secrets })),
           h("div", { class: "decl" }, inst));
       }),
       h("div", {}, again));

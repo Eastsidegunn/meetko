@@ -18,6 +18,17 @@ use crate::contract::{output_errors, MeetingData, CONTRACT};
 use crate::error::{Error, Result};
 use crate::manifest::Manifest;
 use crate::sandbox::{self, Isolation};
+use crate::secrets::{Kind, Redactor, RunConfig};
+
+/// Bytes of plugin stderr kept (the tail); error messages quote the last 2000 of them.
+const STDERR_KEEP: usize = 8192;
+
+/// The kept end of a plugin's stderr, and whether its start was cut off.
+#[derive(Default)]
+struct StderrTail {
+    bytes: Vec<u8>,
+    cut: bool,
+}
 use crate::util::{kill_tree, own_process_group};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -181,7 +192,7 @@ pub struct Plugin {
     child: Child,
     to_child: Option<Sender<String>>,
     from_child: Receiver<Line>,
-    stderr: Arc<Mutex<Vec<u8>>>,
+    stderr: Arc<Mutex<StderrTail>>,
     next_id: u64,
     timeout: Duration,
     #[cfg(windows)]
@@ -192,6 +203,10 @@ pub struct Plugin {
     pub info: Value,
     /// the isolation actually applied: `macos-sbpl`, `none` or `off` (see `sandbox`)
     pub sandbox: &'static str,
+    /// the secret values this run was given; removed from everything the plugin says
+    redact: Redactor,
+    /// the manifest's id and version: what the output's `plugin` must say
+    package: (String, String),
 }
 
 impl Plugin {
@@ -201,7 +216,27 @@ impl Plugin {
     }
 
     pub fn spawn_with(manifest: &Manifest, dir: &Path, timeout: Duration, isolation: &Isolation) -> Result<Plugin> {
+        Plugin::spawn_with_secrets(manifest, dir, timeout, isolation, &RunConfig::default())
+    }
+
+    /// `spawn_with`, giving the plugin its secrets and settings in the `initialize` request on its
+    /// stdin (never in its environment, which other processes of the user can read). Only names the
+    /// manifest declares, each under its own kind, are accepted; every secret value is redacted from
+    /// the plugin's replies, errors and stderr (see `crate::secrets`).
+    pub fn spawn_with_secrets(manifest: &Manifest, dir: &Path, timeout: Duration, isolation: &Isolation, run: &RunConfig) -> Result<Plugin> {
         manifest.require_plugin()?;
+        let declared = |name: &str, kind| crate::secrets::kind_of(&manifest.permissions, name) == Some(kind);
+        for (name, _) in &run.secrets {
+            if !declared(name, Kind::Secret) {
+                return Err(Error::Plugin(format!("{name} is not a secret this plugin declares")));
+            }
+        }
+        for (name, _) in &run.settings {
+            if !declared(name, Kind::Setting) {
+                return Err(Error::Plugin(format!("{name} is not a setting this plugin declares")));
+            }
+        }
+        let redact = Redactor::new(run.secrets.iter().map(|(_, v)| v.as_str()));
         let (prog, args) = manifest.resolve_command(dir)?;
         // resolve ourselves: PATH lookup in the child would depend on the cleared env
         let prog = if prog.components().count() == 1 {
@@ -261,7 +296,7 @@ impl Plugin {
         let stdout = child.stdout.take().expect("piped");
         let (tx, from_child) = mpsc::sync_channel::<Line>(8);
         std::thread::spawn(move || read_lines(stdout, tx));
-        let stderr_buf = Arc::new(Mutex::new(Vec::new()));
+        let stderr_buf = Arc::new(Mutex::new(StderrTail::default()));
         let (mut err, sink) = (child.stderr.take().expect("piped"), stderr_buf.clone());
         std::thread::spawn(move || {
             let mut chunk = [0u8; 4096];
@@ -270,9 +305,12 @@ impl Plugin {
                     break;
                 }
                 let mut b = sink.lock().unwrap();
-                b.extend_from_slice(&chunk[..n]);
-                let excess = b.len().saturating_sub(8192);
-                b.drain(..excess); // keep the tail only
+                b.bytes.extend_from_slice(&chunk[..n]);
+                let excess = b.bytes.len().saturating_sub(STDERR_KEEP);
+                if excess > 0 {
+                    b.bytes.drain(..excess); // keep the tail only; `stderr_tail` drops a cut value
+                    b.cut = true;
+                }
             }
         });
 
@@ -288,16 +326,25 @@ impl Plugin {
             _home: home,
             info: Value::Null,
             sandbox: label,
+            redact,
+            package: (manifest.package.id.clone(), manifest.package.version.clone()),
         };
-        p.info = match p.call("initialize", json!({ "contract": [CONTRACT] })) {
+        let mut params = json!({ "contract": [CONTRACT], "time_budget_ms": timeout.as_millis() as u64 });
+        if !run.is_empty() {
+            let map = |kv: &[(String, String)]| kv.iter().map(|(k, v)| (k.clone(), Value::String(v.clone()))).collect::<serde_json::Map<_, _>>();
+            params["secrets"] = Value::Object(map(&run.secrets));
+            params["settings"] = Value::Object(map(&run.settings));
+        }
+        p.info = match p.call("initialize", params) {
             Ok(v) => v,
             Err(e) if label == sandbox::MACOS_SBPL && e.to_string().contains("sandbox_apply") => {
                 return Err(Error::Plugin(format!("the sandbox could not be applied, plugin not run: {e}")));
             }
             Err(e) => return Err(e),
         };
+        p.redact.value(&mut p.info);
         if p.info["contract"] != json!(CONTRACT) {
-            return Err(Error::Plugin(format!("plugin chose contract {}", p.info["contract"])));
+            return Err(p.redact.error(Error::Plugin(format!("plugin chose contract {}", p.info["contract"]))));
         }
         Ok(p)
     }
@@ -307,10 +354,11 @@ impl Plugin {
         self.child.id()
     }
 
+    /// The last ~2000 bytes of stderr, with every secret redacted before the cut and no fragment
+    /// of one left where the text was cut (see `Redactor::tail`).
     fn stderr_tail(&self) -> String {
         let b = self.stderr.lock().unwrap();
-        let tail = &b[b.len().saturating_sub(2000)..];
-        String::from_utf8_lossy(tail).into_owned()
+        self.redact.tail(&String::from_utf8_lossy(&b.bytes), 2000, b.cut)
     }
 
     /// Kill the plugin and everything it started, then reap it.
@@ -322,7 +370,13 @@ impl Plugin {
         kill_tree(&mut self.child);
     }
 
+    /// One request. Errors carry no secret value of this run.
     pub fn call(&mut self, method: &str, params: Value) -> Result<Value> {
+        let r = self.call_inner(method, params);
+        r.map_err(|e| self.redact.error(e))
+    }
+
+    fn call_inner(&mut self, method: &str, params: Value) -> Result<Value> {
         self.next_id += 1;
         let msg = json!({ "jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params });
         let sent = self.to_child.as_ref().is_some_and(|tx| tx.send(format!("{msg}\n")).is_ok());
@@ -366,7 +420,20 @@ impl Plugin {
     pub fn run_raw(&mut self, raw: &Value) -> Result<Value> {
         let md: MeetingData = serde_json::from_value(raw.clone())
             .map_err(|e| Error::Invalid(format!("input is not meeting data: {e}")))?;
-        let out = self.call("run", json!({ "input": raw }))?;
+        let mut out = self.call("run", json!({ "input": raw }))?;
+        // before the check, so nothing below (stored output, rejection message) can carry a value
+        self.redact.value(&mut out);
+        // the output speaks for this plugin only: a result stored under another name (or a secret
+        // smuggled into `plugin.id`, redacted above) is refused
+        if out["plugin"]["id"] != json!(self.package.0) || out["plugin"]["version"] != json!(self.package.1) {
+            return Err(self.redact.error(Error::Plugin(format!(
+                "rejected output: it names plugin {}@{}, but this is {}@{}",
+                crate::text::escape(&out["plugin"]["id"].to_string(), false),
+                crate::text::escape(&out["plugin"]["version"].to_string(), false),
+                self.package.0,
+                self.package.1
+            ))));
+        }
         let errs = output_errors(&md, &out);
         if !errs.is_empty() {
             return Err(Error::Plugin(format!(
@@ -425,7 +492,12 @@ pub fn run_once(manifest: &Manifest, dir: &Path, raw: &Value, timeout: Duration)
 
 /// `run_once` with an explicit isolation; also returns the isolation actually applied.
 pub fn run_once_with(manifest: &Manifest, dir: &Path, raw: &Value, timeout: Duration, isolation: &Isolation) -> Result<(Value, &'static str)> {
-    let mut p = Plugin::spawn_with(manifest, dir, timeout, isolation)?;
+    run_once_with_secrets(manifest, dir, raw, timeout, isolation, &RunConfig::default())
+}
+
+/// `run_once_with`, with the plugin's secrets and settings for this run (see `spawn_with_secrets`).
+pub fn run_once_with_secrets(manifest: &Manifest, dir: &Path, raw: &Value, timeout: Duration, isolation: &Isolation, run: &RunConfig) -> Result<(Value, &'static str)> {
+    let mut p = Plugin::spawn_with_secrets(manifest, dir, timeout, isolation, run)?;
     let sandbox = p.sandbox;
     let out = p.run_raw(raw);
     let _ = p.close();

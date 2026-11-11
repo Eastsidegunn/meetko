@@ -1,0 +1,30 @@
+[package]
+name = "meetko-qwen3-asr"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "meetko asr.batch engine (experimental): Qwen3-ASR-1.7B with Qwen3-ForcedAligner word times, through the CrispASR C API, behind the NDJSON JSON-RPC engine seam"
+
+# Not a member of the root workspace: it links the prebuilt CrispASR shared libraries (vendor/, see
+# fetch-libs.sh), which `cargo test --workspace` must not need.
+[workspace]
+
+[lib]
+name = "meetko_qwen3_asr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "meetko-qwen3-asr"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+libc = "0.2"
+
+[dev-dependencies]
+meetko-core = { path = "../../crates/meetko-core" } # the contract schema validator the core itself uses
+tempfile = "3"
+
+[profile.release]
+opt-level = 3

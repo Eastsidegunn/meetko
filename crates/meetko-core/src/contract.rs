@@ -39,6 +39,11 @@ validator!(meeting_data_validator, MEETING_DATA_SCHEMA);
 validator!(plugin_output_validator, PLUGIN_OUTPUT_SCHEMA);
 validator!(engine_result_validator, ENGINE_RESULT_SCHEMA);
 
+/// The plugin-output schema as JSON (the MCP server hands its item definitions to agents).
+pub fn plugin_output_schema() -> Value {
+    serde_json::from_str(PLUGIN_OUTPUT_SCHEMA).expect("embedded schema is JSON")
+}
+
 /// `path: message` per violation, like the reference's `schema_errors`.
 pub fn schema_errors(v: &Validator, doc: &Value) -> Vec<String> {
     v.iter_errors(doc)

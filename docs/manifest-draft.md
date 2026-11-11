@@ -85,7 +85,23 @@ display = ["summary_card", "action_items"]
 
 [permissions]
 network = true                # LLM API를 부른다면 true. 설치 시 승인, 결과에 "외부 전송" 표시. 선언하지 않으면 macOS 샌드박스가 네트워크를 막는다
+secrets = ["ANTHROPIC_API_KEY"]  # 선택. 사용자가 넣어 주는 API 키의 이름. network = true일 때만 쓸 수 있다
+settings = ["ANTHROPIC_MODEL"]   # 선택. 비밀이 아닌 설정(모델, 서버 주소)의 이름
 ```
+
+#### `permissions.secrets`와 `permissions.settings` (API 키와 설정)
+
+플러그인이 외부 AI 서비스를 부르려면 사용자의 키가 필요하다. 플러그인은 **이름**만 선언하고, 값은 사용자가 넣는다.
+
+- `secrets`: 비밀인 값(API 키). 이름이 `_KEY`, `_TOKEN`, `_SECRET`으로 끝나야 한다. 넣은 뒤 다시 보이지 않고, 플러그인 출력·오류·stderr에서 `***`로 지워진다. 8자보다 짧은 값은 받지 않는다.
+- `settings`: 비밀이 아닌 설정(모델 이름, 서버 주소). 이름이 `_MODEL`, `_BASE_URL`로 끝나야 한다. 화면에 값이 보이고, 지우지(가리지) 않는다. 서버 주소는 키가 가는 곳이라 키와 같은 곳(키체인)에 둔다.
+- 이름: 대문자 A-Z, 숫자, `_`. 글자로 시작, 2~64자, 각각 **최대 4개**, 두 목록을 합쳐 중복 금지. 끝맺음 규칙 밖에도 시스템·인터프리터·도구를 조종하는 이름은 받지 않는다(`PATH`, `HOME`, `DYLD_*`, `LD_*`, `PYTHON*`, `OPENSSL_*`, `GO*`, `MEETKO_*`, `*_PROXY` 등. 정확한 목록은 `crates/meetko-core/src/secrets.rs`).
+- **`network = true`가 필요하다.** 키와 서버 주소는 어딘가로 보낼 때만 쓸모가 있다. 같이 있지 않으면 매니페스트 파싱 단계에서 거부한다.
+- 예제 `meetko/summary-py`의 기본 모델(`claude-opus-5-5`)은 답하기 전에 생각하고, 그 생각도 요청의 `max_tokens`와 비용에 들어간다. 더 빠르거나 싼 모델은 `ANTHROPIC_MODEL` 설정으로 고른다. `ANTHROPIC_BASE_URL`에 넣는 게이트웨이·프록시는 같은 Messages API와 플러그인이 보내는 `anthropic-version: 2026-10-21`을 지원해야 한다.
+- **"둘 중 하나"는 따로 표시하지 않는다.** 선언한 이름은 모두 선택 사항이다. 코어는 사용자가 넣은 것만 건네고, 무엇이 있어야 하는지는 플러그인이 판단해 없으면 평이한 오류를 낸다(예: `meetko/summary-py`는 `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`/`OPENAI_BASE_URL`).
+- 값은 실행할 때 **`initialize` 요청(stdin)** 으로만 들어간다: `{"contract": ["0.1"], "time_budget_ms": 60000, "secrets": {...}, "settings": {...}}`. 그 플러그인이 선언했고 사용자가 넣은 이름만, 그 실행 한 번에만. 환경 변수나 명령줄에는 넣지 않는다(같은 사용자의 다른 프로세스가 읽을 수 있다). `time_budget_ms`는 호스트의 요청당 시간 예산이다(`MEETKO_PLUGIN_TIMEOUT_SECS`로 늘린다). 둘 다 프로토콜 0.1 `initialize` params에 덧붙인 선택 필드이고, 모르는 필드는 무시하면 된다.
+- 넣는 곳: 앱의 플러그인 화면 `API 키 넣기`, 또는 `meetko plugin secret set <플러그인 id> <이름>`(값은 stdin으로. 명령줄 인자로는 받지 않는다). 저장소는 OS 키체인(macOS)이고, 데이터 폴더에는 쓰지 않는다. 자세한 것은 `docs/plugin-security.md`.
+- 엔진 매니페스트도 같은 규칙으로 파싱만 한다.
 
 ### 플러그인이 받는 회의 데이터
 

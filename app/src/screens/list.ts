@@ -2,6 +2,7 @@ import { api, asError } from "../api";
 import { announce, dayText, durText, h, icon, kindName, mmss, notice } from "../dom";
 import { setJump } from "../jump";
 import { setupCard } from "../setup";
+import { transcribeBus, transcribing } from "../jobs";
 import type { MeetingSummary, SearchOutcome, Status } from "../api";
 
 /** kept across visits, so coming back from a result shows the same results */
@@ -28,16 +29,64 @@ export async function listScreen(main: HTMLElement, _status: Status, onCleanup: 
       h("a", { class: "btn btn-primary btn-lg", href: "#/record" }, icon("record", 12), "녹음 시작")));
     return;
   }
+  // a running job (the automatic 다시 받아쓰기 after a recording, or any draft job) shows as one quiet
+  // line under its meeting, with its cancel; the row's version follows when the job ends
+  const rows = new Map<string, { item: HTMLElement; ver: HTMLElement; job: HTMLElement | null; key: string; text: HTMLElement | null; bar: HTMLElement | null }>();
+  const verCell = (kind: MeetingSummary["latest_kind"]) => h("span", { class: `ver ${kind ?? ""}` }, h("i", { class: "dot" }), kindName(kind));
   const meetings = h("div", {},
     h("div", { class: "mlist-head" }, ...["제목", "날짜", "길이", "최신 버전"].map((t) => h("span", { text: t })), h("span", { class: "stale", text: "오래된 결과" })),
     // the whole row is the link, so the title is reachable by keyboard and middle-click
-    h("div", { role: "list" }, ...list.map((m) => h("div", { role: "listitem" },
-      h("a", { class: "row mrow", href: `#/meeting/${encodeURIComponent(m.id)}` },
-        h("span", { class: "mtitle trunc", text: m.title ?? "제목 없음", title: m.title }),
-        h("span", { class: "cell-2", text: dayText(m.started_at ?? m.created_at) }),
-        h("span", { class: "cell-2 num", text: durText(m.duration_ms) }),
-        h("span", { class: `ver ${m.latest_kind ?? ""}` }, h("i", { class: "dot" }), kindName(m.latest_kind)),
-        h("span", { class: `stale num${m.stale_count ? " has" : ""}`, text: m.stale_count ? `${m.stale_count}개` : "—" }))))));
+    h("div", { role: "list" }, ...list.map((m) => {
+      const ver = verCell(m.latest_kind);
+      const item = h("div", { role: "listitem" },
+        h("a", { class: "row mrow", href: `#/meeting/${encodeURIComponent(m.id)}` },
+          h("span", { class: "mtitle trunc", text: m.title ?? "제목 없음", title: m.title }),
+          h("span", { class: "cell-2", text: dayText(m.started_at ?? m.created_at) }),
+          h("span", { class: "cell-2 num", text: durText(m.duration_ms) }),
+          ver,
+          h("span", { class: `stale num${m.stale_count ? " has" : ""}`, text: m.stale_count ? `${m.stale_count}개` : "—" })));
+      rows.set(m.id, { item, ver, job: null, key: "", text: null, bar: null });
+      return item;
+    })));
+  /** Show (or update, or take away) the job line of a meeting. Only the text and bar change while it runs, so focus on its cancel stays. */
+  function paintJob(id: string): void {
+    const r = rows.get(id);
+    if (!r) return;
+    const e = transcribing.get(id);
+    if (!e) { r.job?.remove(); Object.assign(r, { job: null, key: "", text: null, bar: null }); return; }
+    const pct = e.channels > 0 ? Math.round((e.channel * 100 + e.percent) / e.channels) : null;
+    const text = e.auto ? `더 정확하게 다시 받아쓰는 중…${pct === null ? "" : ` ${pct}%`}`
+      : e.from_live ? "초안 만드는 중…" : `받아쓰는 중…${pct === null ? "" : ` ${pct}%`}`;
+    const key = e.auto ? "auto" : e.from_live ? "live" : "batch";
+    if (r.job && r.key === key && r.text && r.bar) {
+      r.text.textContent = text;
+      r.bar.style.width = `${pct ?? 0}%`;
+      return;
+    }
+    r.job?.remove();
+    const t = h("span", { class: "num", text }), bar = h("i");
+    bar.style.width = `${pct ?? 0}%`;
+    const job = h("div", { class: "mrow-job" }, t, h("div", { class: "progress", "aria-hidden": "true" }, bar),
+      h("button", { type: "button", class: "btn", text: "취소", "aria-label": e.auto ? "다시 받아쓰기 취소" : "취소", onclick: () => void api.transcribeCancel() }));
+    r.item.append(job);
+    Object.assign(r, { job, key, text: t, bar });
+  }
+  for (const id of transcribing.keys()) paintJob(id);
+  const offJobs = transcribeBus.on((e) => {
+    const id = e.meeting_id ?? "";
+    paintJob(id);
+    if (e.state === "progress" || !rows.has(id)) return;
+    if (e.auto && e.state === "done") announce("새 초안이 준비됐어요");
+    // the meeting's newest version changed (or not): read it again for this row only
+    void api.listMeetings().then((all) => {
+      const m = all.find((x) => x.id === id), r = rows.get(id);
+      if (!m || !r || left) return;
+      const ver = verCell(m.latest_kind);
+      r.ver.replaceWith(ver);
+      r.ver = ver;
+    }, () => {});
+  });
+  onCleanup(() => { offJobs(); });
 
   // ---------- search: replaces the list while there is a query ----------
   const input = h("input", { type: "search", class: "search-input", placeholder: "전사본에서 찾기", "aria-label": "모든 회의의 전사본에서 찾기", autocomplete: "off", spellcheck: "false" });

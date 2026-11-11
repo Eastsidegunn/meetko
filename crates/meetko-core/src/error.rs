@@ -29,6 +29,9 @@ pub enum Error {
     BadEngineOutput(String),
     #[error("engine: {0}")]
     Engine(String),
+    /// an engine that must run sandboxed cannot be (macOS: no sandbox-exec, or the profile does not apply)
+    #[error("engine sandbox: {0}")]
+    EngineSandbox(String),
     #[error("cancelled")]
     Cancelled,
     #[error("plugin: {0}")]
@@ -42,6 +45,14 @@ pub enum Error {
     /// installing would replace a plugin that came from somewhere else; needs an explicit "replace"
     #[error("plugin source changed: {0}")]
     PluginSourceChanged(String),
+    /// a plugin secret (API key) could not be checked, saved or read; never carries the value
+    #[error("secret: {0}")]
+    Secret(String),
+    /// the OS secret store refused this program access to a saved value (macOS: the keychain
+    /// prompt was denied or could not be shown, or the item belongs to another meetko binary);
+    /// the message says what to do. Never carries the value.
+    #[error("keychain access not allowed: {0}")]
+    SecretAccessDenied(String),
     #[error("plugin timed out after {0:?}")]
     Timeout(std::time::Duration),
     /// fetching or copying a model failed; the first field is a code for the UI
@@ -72,6 +83,9 @@ impl Error {
             Error::PluginChanged(_) => "plugin_changed",
             Error::PluginSourceChanged(_) => "plugin_source_changed",
             Error::StaleDraft(_) => "stale_draft",
+            Error::EngineSandbox(_) => "engine_sandbox",
+            Error::Secret(_) => "secret",
+            Error::SecretAccessDenied(_) => "secret_access_denied",
             Error::Download(code, _) => code,
             _ => "error",
         }

@@ -12,14 +12,22 @@
 //! against `models.toml` and hands this process that copy (crates/meetko-core/src/live.rs).
 
 mod events;
+mod session;
 
 use std::io::BufRead;
 use std::path::PathBuf;
 
-use base64::Engine as _;
 use meetko_nemotron_stream::{ffi, rpc};
 use rpc::{out, reply};
 use serde_json::{json, Value};
+use session::Session;
+
+/// Write out the events a session collected.
+fn flush<R: session::Recognize>(s: &mut Session<R>) {
+    for ev in s.out.drain(..) {
+        out(&json!({ "jsonrpc": "2.0", "method": "stream.event", "params": ev }));
+    }
+}
 
 const CONTRACT: &str = "0.1";
 const ENGINE_ID: &str = "meetko/nemotron-stream";
@@ -34,8 +42,6 @@ const SETTINGS: ffi::Settings = ffi::Settings {
     // the same trailing silence the transducer engine ends an utterance on
     eou_ms: 800,
 };
-/// a segment whose text nears the schema's 4000 characters is closed by force
-const MAX_SEGMENT_CHARS: usize = 3000;
 
 /// A protocol failure the core must treat as the engine failing: say so, then stop. Dropping
 /// input silently would shift `fed` and make every later timestamp early (`rpc::fatal` says how
@@ -56,103 +62,10 @@ fn model_file() -> Result<PathBuf, String> {
     }
 }
 
-/// One utterance-by-utterance decode loop. `fed` counts the samples given to the model, which is
-/// the audio clock: `emitted_at_ms` is how much audio the engine had when it said something.
-struct Session {
-    dec: ffi::Decoder,
-    fed: u64,
-    segment: i64,
-    revision: i64,
-    /// where the current segment begins as far as is known: the end of the previous final's last word
-    seg_start_ms: i64,
-    last_text: String,
-}
-
-impl Session {
-    fn fed_ms(&self) -> i64 {
-        (self.fed * 1000 / 16000) as i64
-    }
-
-    fn emit(&mut self, h: &ffi::Hypothesis) {
-        let ev = events::event(&events::EventIn {
-            segment: self.segment,
-            revision: self.revision,
-            is_final: h.is_final,
-            start_ms: self.seg_start_ms,
-            text: &h.text,
-            words: &h.words,
-            fed_ms: self.fed_ms(),
-        });
-        self.revision += 1;
-        out(&json!({ "jsonrpc": "2.0", "method": "stream.event", "params": ev }));
-    }
-
-    fn handle(&mut self, h: ffi::Hypothesis) {
-        if h.is_final {
-            if !h.text.trim().is_empty() {
-                self.emit(&h);
-                self.segment += 1;
-                self.revision = 0;
-            }
-            self.seg_start_ms = h.words.last().map_or(self.seg_start_ms, |w| w.end_ms.max(self.seg_start_ms));
-            self.last_text.clear();
-        } else if h.text != self.last_text {
-            self.last_text = h.text.clone();
-            self.emit(&h);
-        }
-    }
-
-    /// Everything the model can say about the audio pushed so far.
-    fn drain(&mut self) {
-        loop {
-            match self.dec.next() {
-                Ok(Some(h)) => self.handle(h),
-                Ok(None) => break,
-                Err(e) => fatal(&e),
-            }
-        }
-    }
-
-    fn push(&mut self, samples: &[f32]) {
-        if let Err(e) = self.dec.push(samples) {
-            fatal(&e);
-        }
-        self.fed += samples.len() as u64;
-        self.drain();
-        if self.last_text.chars().count() > MAX_SEGMENT_CHARS {
-            if let Err(e) = self.dec.force_endpoint() {
-                fatal(&e);
-            }
-            self.drain();
-        }
-    }
-
-    /// End of audio: flush what the model still holds as a last final.
-    fn finish(&mut self) {
-        if let Err(e) = self.dec.finish() {
-            fatal(&e);
-        }
-        self.drain();
-        if !self.last_text.trim().is_empty() {
-            // the library said nothing final about the tail: keep the text, without words
-            let h = ffi::Hypothesis { is_final: true, text: std::mem::take(&mut self.last_text), words: vec![] };
-            self.handle(h);
-        }
-    }
-}
-
-fn decode_pcm(b64: &str) -> Option<Vec<f32>> {
-    let bytes = base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
-    if bytes.len() % 2 != 0 {
-        return None; // half a sample: the sender broke the framing
-    }
-    Some(bytes.as_chunks::<2>().0.iter().map(|p| f32::from(i16::from_le_bytes(*p)) / 32768.0).collect())
-}
-
 fn main() {
     let model = model_file();
     let model_id = std::env::var_os("MEETKO_STREAM_MODEL").map(PathBuf::from).and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
-    let mut session: Option<Session> = None;
+    let mut session: Option<Session<ffi::Decoder>> = None;
     for line in std::io::stdin().lock().lines() {
         let line = match line {
             Ok(l) => l,
@@ -171,8 +84,14 @@ fn main() {
         match (method, &id) {
             ("stream.push", _) => {
                 let Some(s) = session.as_mut() else { fatal("stream.push without an open stream") };
-                match params["pcm_s16le_b64"].as_str().and_then(decode_pcm) {
-                    Some(samples) => s.push(&samples),
+                match params["pcm_s16le_b64"].as_str().and_then(rpc::decode_pcm) {
+                    Some(samples) => {
+                        let r = s.push(&samples);
+                        flush(s);
+                        if let Err(e) = r {
+                            fatal(&e);
+                        }
+                    }
                     None => fatal("stream.push carried invalid PCM"),
                 }
             }
@@ -199,11 +118,13 @@ fn main() {
                     let file = model.clone().map_err(|e| (-32010, e))?;
                     let path = std::ffi::CString::new(file.to_string_lossy().as_bytes()).map_err(|_| (-32010, "model path contains NUL".to_string()))?;
                     let dec = ffi::Decoder::new(&path, &language, &SETTINGS).map_err(|e| (-32010, e))?;
-                    session = Some(Session { dec, fed: 0, segment: 0, revision: 0, seg_start_ms: 0, last_text: String::new() });
+                    session = Some(Session::new(dec));
                     Ok(json!({ "params": {
                         "decoding": "rnnt_greedy", "language": language.to_string_lossy(),
                         "chunk_ms": (SETTINGS.chunk_s * 1000.0).round() as i64, "rnnt_right_context": SETTINGS.right_context,
                         "endpoint": { "stop_history_eou_ms": SETTINGS.eou_ms },
+                        // a fresh library stream per utterance, fed again from the last word's end (src/session.rs)
+                        "stream_per_utterance": true,
                     }}))
                 })();
                 reply(id, r);
@@ -211,8 +132,12 @@ fn main() {
             ("stream.close", Some(id)) => {
                 let r = match session.take() {
                     Some(mut s) => {
-                        s.finish();
-                        Ok(json!({ "fed_ms": s.fed_ms(), "segments": s.segment }))
+                        let r = s.finish();
+                        flush(&mut s);
+                        if let Err(e) = r {
+                            fatal(&e);
+                        }
+                        Ok(json!({ "fed_ms": s.fed_ms(), "segments": s.segments() }))
                     }
                     None => Err((-32602, "no stream is open".to_string())),
                 };

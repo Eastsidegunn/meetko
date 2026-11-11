@@ -141,6 +141,9 @@ pub struct Hypothesis {
 pub struct Decoder {
     rec: *mut RecognizerOpaque,
     stream: *mut StreamOpaque,
+    /// the request options every stream of this decoder is opened with; `language_code` points into `_language`
+    opts: Options,
+    _language: CString,
 }
 
 impl Decoder {
@@ -170,6 +173,7 @@ impl Decoder {
         let mut rec = std::ptr::null_mut();
         // SAFETY: cfg and what it points to live through the call; the library copies the config
         check(unsafe { nemo_speech_asr_create(&cfg, &mut rec) }, "cannot load the model")?;
+        let language = language.to_owned();
         let mut o = unsafe { nemo_speech_asr_recognition_options_default() };
         o.language_code = language.as_ptr();
         o.interim_results = true;
@@ -182,7 +186,19 @@ impl Decoder {
             unsafe { nemo_speech_asr_destroy(rec) };
             return Err(e);
         }
-        Ok(Decoder { rec, stream })
+        Ok(Decoder { rec, stream, opts: o, _language: language })
+    }
+
+    /// Close the stream and open a fresh one on the same recognizer (same options): the encoder
+    /// cache and the decoder state start over, and times count from zero again.
+    pub fn restart(&mut self) -> Result<(), String> {
+        let mut stream = std::ptr::null_mut();
+        // SAFETY: rec is live; opts and the language it points to live as long as self
+        check(unsafe { nemo_speech_asr_streaming_recognize(self.rec, &self.opts, &mut stream) }, "cannot reopen the stream")?;
+        // SAFETY: the old stream is live and owned here; it is replaced right away
+        unsafe { nemo_speech_asr_stream_close(self.stream) };
+        self.stream = stream;
+        Ok(())
     }
 
     /// 16 kHz mono; buffers only, `next` decodes.

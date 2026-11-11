@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-speaker-rename"
+description = "Enables the speaker_rename command without any pre-configured scope."
+commands.allow = ["speaker_rename"]
+
+[[permission]]
+identifier = "deny-speaker-rename"
+description = "Denies the speaker_rename command without any pre-configured scope."
+commands.deny = ["speaker_rename"]

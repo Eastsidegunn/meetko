@@ -6,6 +6,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use std::time::Duration;
 
 use meetko_core::capture_run::{CaptureOutcome, ProviderError};
@@ -14,16 +15,172 @@ use meetko_core::diarize::DiarEngine;
 use meetko_core::live::{self, LiveConfig, LiveOutcome};
 use meetko_core::manifest::{plugin_code_sha256, Manifest};
 use meetko_core::plugin_source::{self, Endpoints, GalleryEntry, PluginSource};
+use meetko_core::overlay::{Overlay, View};
+use meetko_core::store::overlay::SetAside;
 use meetko_core::store::search::SearchOutcome;
 use meetko_core::store::{PluginRow, ResultRow, Store};
+use meetko_core::vocabulary::{self, Replacement, Vocabulary};
 use meetko_core::whisper::{BatchEngine, Progress, WhisperCli};
-use meetko_core::{capture_run, export, host, model_setup, pipeline, util};
+use meetko_core::secrets::{self, SecretStore};
+use meetko_core::{batch, capture_run, export, host, model_setup, pipeline, util};
 use serde::Serialize;
 use serde_json::Value;
+
+/// A refused vocabulary in the words of the settings screen (해요체; the code stays `invalid_data`).
+pub fn problem_text(p: &vocabulary::Problem) -> String {
+    use vocabulary::{Problem as P, MAX_FILE_BYTES, MAX_FIND_CHARS, MAX_HINTS, MAX_HINT_CHARS, MAX_REPLACEMENTS, MAX_REPLACE_CHARS, VERSION};
+    match p {
+        P::TooLarge => format!("용어 사전이 {}KB를 넘어요.", MAX_FILE_BYTES >> 10),
+        P::NotVocabulary(_) => "용어 사전 파일이 아니에요. meetko에서 내보낸 JSON 파일인지 확인해 주세요.".into(),
+        P::Version(n) => format!("버전 {n} 용어 사전은 읽을 수 없어요. 이 앱은 버전 {VERSION}을 읽어요."),
+        P::TooManyHints => format!("용어는 {MAX_HINTS}개까지 적을 수 있어요."),
+        P::TooManyReplacements => format!("바꾸기는 {MAX_REPLACEMENTS}개까지 둘 수 있어요."),
+        P::HintTooLong(i) => format!("{i}번째 용어가 {MAX_HINT_CHARS}자를 넘어요."),
+        P::HintHidden(i) => format!("{i}번째 용어에 쓸 수 없는 문자(탭 같은 제어 문자)가 있어요."),
+        P::EmptyFind(i) => format!("{i}번째 바꾸기에 찾을 말이 없어요."),
+        P::FindTooLong(i) => format!("{i}번째 바꾸기의 찾을 말이 {MAX_FIND_CHARS}자를 넘어요."),
+        P::ReplaceTooLong(i) => format!("{i}번째 바꾸기의 바꿀 말이 {MAX_REPLACE_CHARS}자를 넘어요."),
+        P::ReplacementHidden(i) => format!("{i}번째 바꾸기에 쓸 수 없는 문자(줄바꿈, 탭 같은 제어 문자)가 있어요."),
+    }
+}
+
+/// The longest sample sentence the vocabulary preview takes.
+pub const PREVIEW_MAX_CHARS: usize = 2000;
 
 // the Korean channel names are an app-layer concern (the core only knows mic/loopback)
 /// The key of `app-settings.json` that remembers the setup card was put away.
 pub const SETUP_CARD_KEY: &str = "setup_card";
+/// The key of `app-settings.json` that holds the engine 다시 받아쓰기 uses: [`BATCH_AUTO`] or one of
+/// `meetko_core::batch::ENGINES`.
+pub const BATCH_ENGINE_KEY: &str = "batch_engine";
+/// The engine choice "the most accurate one that is ready" (Qwen3-ASR, else Whisper); the default.
+pub const BATCH_AUTO: &str = "auto";
+/// What the user can choose for 다시 받아쓰기, in the order the settings show them.
+pub const BATCH_CHOICES: [&str; 3] = [BATCH_AUTO, batch::WHISPER, batch::QWEN3_ASR];
+/// The key of `app-settings.json` that says whether a recording is transcribed again by a batch engine
+/// once its live draft exists (`true` unless the user turned it off).
+pub const AUTO_RETRANSCRIBE_KEY: &str = "auto_retranscribe";
+
+/// Which batch engines could run right now.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Ready {
+    /// whisper-cli and its model were found
+    pub whisper: bool,
+    /// the Qwen3-ASR engine and both of its pinned models are there (and its sandbox applies)
+    pub qwen: bool,
+}
+
+/// The engine a batch job runs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pick {
+    pub engine: &'static str,
+    /// the user chose the other engine, which is not ready: this one runs instead (the UI says so)
+    pub fallback: bool,
+}
+
+/// The engine for 다시 받아쓰기: with `auto` the most accurate one that is ready (Qwen3-ASR measured
+/// best on Korean–English meetings, then Whisper); an explicit choice when it is ready, else the other
+/// ready one as a fallback. `None` when nothing is ready.
+pub fn pick_engine(choice: &str, ready: Ready) -> Option<Pick> {
+    let ok = |e: &str| if e == batch::QWEN3_ASR { ready.qwen } else { ready.whisper };
+    let order: [&'static str; 2] = if choice == batch::WHISPER { [batch::WHISPER, batch::QWEN3_ASR] } else { [batch::QWEN3_ASR, batch::WHISPER] };
+    let explicit = choice != BATCH_AUTO;
+    order.into_iter().enumerate().find(|(_, e)| ok(e)).map(|(i, engine)| Pick { engine, fallback: explicit && i > 0 })
+}
+
+/// Payload of the `transcribe` and `plugin-run` events.
+#[derive(Serialize, Clone, Default, Debug)]
+pub struct JobEvent {
+    /// progress | done | error | cancelled
+    pub state: &'static str,
+    pub meeting_id: Option<String>,
+    pub version_id: Option<String>,
+    pub plugin_id: Option<String>,
+    pub result_id: Option<i64>,
+    pub channel: u32,
+    pub channels: u32,
+    pub percent: u8,
+    /// the channel is transcribed and its speakers are being separated
+    pub diarizing: bool,
+    /// the job makes the first draft from the live captions (no batch transcription)
+    pub from_live: bool,
+    /// the batch transcription that started on its own after the live draft of a new recording
+    pub auto: bool,
+    /// the batch engine that runs (`whisper` | `qwen3-asr`); None for a draft from the live captions
+    pub engine: Option<&'static str>,
+    /// the engine the user chose is not ready; `engine` runs instead
+    pub fallback: bool,
+    pub code: Option<&'static str>,
+    pub message: Option<String>,
+}
+
+/// What a `transcribe` job makes. All share the one job slot, its cancel flag and its events.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DraftJob {
+    /// a batch transcription (다시 받아쓰기) with the engine `pick_engine` names
+    Batch,
+    /// the first draft from the meeting's live captions
+    FromLive,
+    /// `FromLive`, then (when the setting is on and an engine is ready) a batch transcription that
+    /// reuses the live speakers: what a stopped recording starts
+    FromLiveThenBatch,
+}
+
+/// Where a job gets its batch engines: the real ones in the app, fakes in tests.
+pub trait Engines {
+    fn ready(&self) -> Ready;
+    fn open(&self, engine: &'static str) -> ApiResult<Box<dyn BatchEngine>>;
+}
+
+/// The batch engines of the real environment.
+pub struct SystemEngines {
+    pub data_dir: PathBuf,
+}
+
+impl Engines for SystemEngines {
+    fn ready(&self) -> Ready {
+        Ready { whisper: whisper_setup(&self.data_dir).2.ok, qwen: batch::BatchConfig::from_env().is_ok() }
+    }
+    fn open(&self, engine: &'static str) -> ApiResult<Box<dyn BatchEngine>> {
+        Ok(if engine == batch::QWEN3_ASR {
+            Box::new(batch::BatchProcess::new(batch::BatchConfig::from_env()?))
+        } else {
+            Box::new(WhisperCli::load(&self.data_dir)?.with_hints(vocabulary::hints_for_engine(&self.data_dir)))
+        })
+    }
+}
+
+/// The speaker separation a job may use: the engine (optional), and what was said about it when it
+/// was set up (a model that is set but unusable is only a note, `off`).
+#[derive(Default)]
+pub struct DiarSetup<'a> {
+    pub engine: Option<&'a dyn DiarEngine>,
+    pub notes: Vec<String>,
+    pub off: bool,
+}
+
+/// whisper's model, its engine (whisper-cli), and the two together.
+fn whisper_setup(data_dir: &Path) -> (Setup, Setup, Setup) {
+    let model = match WhisperCli::load(data_dir) {
+        Err(e) => Setup::bad(e.code(), e.to_string()),
+        Ok(w) if w.model.is_file() => Setup::ok().at(&w.model),
+        Ok(w) => Setup::bad("model_missing", "the configured model file does not exist").at(&w.model),
+    };
+    // the engine binary is independent of the model: env, a sibling of the app, or PATH
+    let cli = WhisperCli::resolve_cli();
+    let found = if cli.components().count() > 1 { cli.is_file().then(|| cli.clone()) } else { host::find_on_path(&cli) };
+    let whisper_cli = match found {
+        Some(p) => Setup::ok().at(&p),
+        None => Setup::bad("engine_not_found", format!("{} was not found", cli.display())),
+    };
+    let both = if model.ok && whisper_cli.ok {
+        Setup::ok()
+    } else {
+        let (code, detail) = if model.ok { (whisper_cli.code, &whisper_cli.detail) } else { (model.code, &model.detail) };
+        Setup { ok: false, path: None, code, detail: detail.clone() }
+    };
+    (model, whisper_cli, both)
+}
 
 pub const MIC_LABEL: &str = "나";
 pub const LOOPBACK_LABEL: &str = "상대";
@@ -100,13 +257,24 @@ pub struct Status {
     pub capture: Setup,
     /// live captions (engine + streaming model); recording works without them
     pub live: Setup,
+    /// the user's choice for 다시 받아쓰기: `auto` | `whisper` | `qwen3-asr`
+    pub batch_choice: &'static str,
+    /// the engine 다시 받아쓰기 runs now (`pick_engine`); when none is ready, the one to set up (the
+    /// chosen one, whisper for `auto`)
+    pub batch_engine: &'static str,
+    /// the chosen engine is not ready and the other one runs instead
+    pub batch_fallback: bool,
+    /// whether some engine is ready; the code and detail of the one to set up when not
+    pub batch: Setup,
+    /// a stopped recording is transcribed again on its own once its live draft exists
+    pub auto_retranscribe: bool,
 }
 
 /// One model the app can set up for the user (`meetko_core::model_setup::OFFERS`). No path: the
 /// webview learns the state and what a download would be, not where files live.
 #[derive(Serialize, Debug, Clone)]
 pub struct ModelPiece {
-    /// stream | diarization
+    /// stream | diarization | qwen3-asr | qwen3-aligner
     pub key: &'static str,
     /// ready | missing | bad (a file is there but it is not the pinned model, or the variable is wrong)
     pub state: &'static str,
@@ -121,7 +289,7 @@ pub struct ModelPiece {
     pub partial: u64,
     pub license: &'static str,
     pub publisher: &'static str,
-    /// "nvidia/…" on Hugging Face, and the host the download starts at
+    /// "nvidia/…" (or "cstr/…") on Hugging Face, and the host the download starts at
     pub repo: &'static str,
     pub host: &'static str,
     pub detail: Option<String>,
@@ -144,6 +312,10 @@ pub struct ModelSetup {
     pub job: Option<ModelJobView>,
     /// the user put the meeting list's setup card away (나중에); settings still offer everything
     pub card_dismissed: bool,
+    /// the user's choice for 다시 받아쓰기 (`auto` | `whisper` | `qwen3-asr`)
+    pub batch_engine: &'static str,
+    /// a stopped recording is transcribed again on its own once its live draft exists
+    pub auto_retranscribe: bool,
 }
 
 /// Whether the engine is missing, or `MEETKO_STREAM_ENGINE` names something that is not there.
@@ -158,6 +330,13 @@ pub fn model_piece(o: &model_setup::Offer, env: Option<PathBuf>, unpinned: bool,
     let from_env = env.is_some();
     let (state, detail) = match live::model_dir_for(o.role, env, data_dir) {
         None => ("missing", None),
+        // the app's own folder: this offer's file on its own, so the second file of a two-file model is
+        // "missing" (not "bad") while the first is being fetched, and "bad" only when it is there and wrong
+        Some((_, false)) => match o.file_state(data_dir) {
+            model_setup::FileState::Missing => ("missing", None),
+            model_setup::FileState::Ready => ("ready", None),
+            model_setup::FileState::Bad => ("bad", Some(format!("{} is not the pinned file", o.file))),
+        },
         // the development switch only covers a directory the environment named
         Some((dir, named)) => match live::check_model_for(o.role, &dir, unpinned && named, &data_dir.join("model-sha256-cache.json")) {
             Ok(_) => ("ready", None),
@@ -225,6 +404,12 @@ pub struct PluginPreview {
     pub description: String,
     pub network: bool,
     pub audio: String,
+    /// declared secret names (API keys the user sets); never their values
+    pub secrets: Vec<String>,
+    /// declared setting names (model, base URL)
+    pub settings: Vec<String>,
+    /// adding this re-adds an installed plugin from the same origin: its saved keys and settings stay
+    pub keeps_values: bool,
     pub display: Vec<String>,
     pub code_sha256: String,
     pub manifest_sha256: String,
@@ -241,6 +426,10 @@ pub struct PluginPreview {
     /// identifies this gallery preview; installing needs the same token back (set by the app layer)
     pub token: Option<String>,
 }
+
+/// One declared secret or setting of an installed plugin. A secret's value is never sent to the
+/// webview (only whether it is set); a setting's value is plain configuration and is shown.
+pub type SecretState = secrets::Entry;
 
 /// The installed plugin an add would overwrite.
 #[derive(Serialize, Clone)]
@@ -265,8 +454,11 @@ pub struct ResultView {
     pub plugin_manifest_sha256: String,
     pub declared_network: bool,
     pub declared_audio: String,
-    /// the isolation the run had: macos-sbpl | none | off | unrecorded
+    /// the isolation the run had: macos-sbpl | none | off | unrecorded | mcp (an external AI agent)
     pub sandbox: String,
+    /// for a result from an AI agent over MCP: `{via, network, protocol, client: {name, version},
+    /// agent: {name, version}}` (self-reported, cleaned); `None` for plugin results
+    pub agent: Option<Value>,
 }
 
 impl From<ResultRow> for ResultView {
@@ -284,6 +476,7 @@ impl From<ResultRow> for ResultView {
             declared_network: r.declared_network,
             declared_audio: r.declared_audio,
             sandbox: r.sandbox,
+            agent: r.agent,
         }
     }
 }
@@ -393,6 +586,25 @@ impl ExportFormat {
     }
 }
 
+/// What the meeting screen needs to show a version as the user changed it.
+#[derive(Debug, Serialize)]
+pub struct OverlayView {
+    pub version_id: String,
+    pub overlay: Overlay,
+    /// names and edits of earlier transcripts that this version does not show
+    pub set_aside: SetAside,
+}
+
+/// The changes the screen can make; each returns the new [`OverlayView`].
+pub enum OverlayChange {
+    Rename { speaker_id: String, name: String },
+    Merge { speaker_id: String, into: String },
+    ResetSpeaker { speaker_id: String },
+    Edit { turn_id: String, text: String },
+    ResetTurn { turn_id: String },
+    DiscardSetAside,
+}
+
 pub struct Export {
     pub text: String,
     /// suggested in the save dialog; the title with the characters file systems refuse replaced
@@ -430,11 +642,17 @@ pub fn file_stem(title: &str) -> String {
 
 pub struct Core {
     pub data_dir: PathBuf,
+    /// where plugin secrets live (the OS keychain; an in-memory store in tests)
+    pub secrets: Arc<dyn SecretStore>,
 }
 
 impl Core {
     pub fn from_env() -> Self {
-        Core { data_dir: util::data_dir() }
+        Core::new(util::data_dir())
+    }
+
+    pub fn new(data_dir: PathBuf) -> Self {
+        Core { data_dir, secrets: secrets::system() }
     }
 
     /// One connection per call: `Store` is not `Sync`, and SQLite (WAL + busy_timeout) is
@@ -444,23 +662,110 @@ impl Core {
     }
 
     pub fn status(&self) -> Status {
-        let model = match WhisperCli::load(&self.data_dir) {
-            Err(e) => Setup::bad(e.code(), e.to_string()),
-            Ok(w) if w.model.is_file() => Setup::ok().at(&w.model),
-            Ok(w) => Setup::bad("model_missing", "the configured model file does not exist").at(&w.model),
-        };
-        // the engine binary is independent of the model: env, a sibling of the app, or PATH
-        let cli = WhisperCli::resolve_cli();
-        let found = if cli.components().count() > 1 { cli.is_file().then(|| cli.clone()) } else { host::find_on_path(&cli) };
-        let whisper_cli = match found {
-            Some(p) => Setup::ok().at(&p),
-            None => Setup::bad("engine_not_found", format!("{} was not found", cli.display())),
-        };
+        let (model, whisper_cli, whisper) = whisper_setup(&self.data_dir);
         let capture = match capture_run::resolve_bin(&self.data_dir) {
             Ok(p) => Setup::ok().at(&p),
             Err(e) => Setup::bad("capture_missing", e.to_string()),
         };
-        Status { dev_build: cfg!(debug_assertions), model, whisper_cli, capture, live: Self::live_setup() }
+        // no path for Qwen3-ASR: the webview learns the state, not where things live
+        let qwen = match batch::BatchConfig::from_env() {
+            Ok(_) => Setup::ok(),
+            Err(e) => Setup::bad(e.code(), e.to_string()),
+        };
+        let choice = self.batch_choice();
+        let (batch_engine, batch_fallback, batch) = match pick_engine(choice, Ready { whisper: whisper.ok, qwen: qwen.ok }) {
+            Some(p) => (p.engine, p.fallback, Setup::ok()),
+            // nothing is ready: what the chosen engine (whisper for auto) is missing
+            None if choice == batch::QWEN3_ASR => (batch::QWEN3_ASR, false, qwen),
+            None => (batch::WHISPER, false, whisper),
+        };
+        Status {
+            dev_build: cfg!(debug_assertions),
+            model,
+            whisper_cli,
+            capture,
+            live: Self::live_setup(),
+            batch_choice: choice,
+            batch_engine,
+            batch_fallback,
+            batch,
+            auto_retranscribe: self.auto_retranscribe(),
+        }
+    }
+
+    /// The user's choice for 다시 받아쓰기 in `app-settings.json` (`BATCH_CHOICES`); `auto` when there is
+    /// none or it is not one the app knows.
+    pub fn batch_choice(&self) -> &'static str {
+        let chosen = crate::meeting_watch::read_key(&self.data_dir, BATCH_ENGINE_KEY);
+        BATCH_CHOICES.into_iter().find(|e| chosen.as_ref().and_then(|v| v.as_str()) == Some(e)).unwrap_or(BATCH_AUTO)
+    }
+
+    /// Keep the user's choice of the engine for 다시 받아쓰기. Only a known choice is kept.
+    pub fn set_batch_engine(&self, engine: &str) -> ApiResult<()> {
+        if !BATCH_CHOICES.contains(&engine) {
+            return Err(ApiError::new("invalid_data", "no such engine"));
+        }
+        crate::meeting_watch::save_key(&self.data_dir, BATCH_ENGINE_KEY, serde_json::json!(engine)).map_err(|e| ApiError::new("io", e.to_string()))
+    }
+
+    /// Whether a stopped recording is transcribed again on its own (on unless the user turned it off).
+    pub fn auto_retranscribe(&self) -> bool {
+        crate::meeting_watch::read_key(&self.data_dir, AUTO_RETRANSCRIBE_KEY).and_then(|v| v.as_bool()).unwrap_or(true)
+    }
+
+    pub fn set_auto_retranscribe(&self, on: bool) -> ApiResult<()> {
+        crate::meeting_watch::save_key(&self.data_dir, AUTO_RETRANSCRIBE_KEY, serde_json::json!(on)).map_err(|e| ApiError::new("io", e.to_string()))
+    }
+
+    // ------------------------------------------------------------ vocabulary (용어 사전)
+
+    /// The stored vocabulary (`vocabulary.json` in the data folder). A damaged file is an error here, so
+    /// the settings can say so; elsewhere it counts as empty.
+    pub fn vocabulary(&self) -> ApiResult<Vocabulary> {
+        vocabulary::load_checked(&self.data_dir)?.map_err(|p| ApiError::new("invalid_data", format!("저장된 용어 사전 파일을 읽지 못했어요. {}", problem_text(&p))))
+    }
+
+    /// Check and store the whole vocabulary; returns what was kept (hints trimmed and deduplicated).
+    pub fn set_vocabulary(&self, v: Vocabulary) -> ApiResult<Vocabulary> {
+        let v = v.validated().map_err(|p| ApiError::new("invalid_data", problem_text(&p)))?;
+        Ok(vocabulary::save(&self.data_dir, v)?)
+    }
+
+    /// The settings' live preview: `sample` with `replacements` (not stored yet) applied, by the same
+    /// function the transcript and the exports use. Rules with nothing to find are skipped.
+    pub fn vocabulary_preview(&self, replacements: Vec<Replacement>, sample: &str) -> ApiResult<String> {
+        if replacements.len() > vocabulary::MAX_REPLACEMENTS || sample.chars().count() > PREVIEW_MAX_CHARS {
+            return Err(ApiError::new("invalid_data", format!("예문은 {PREVIEW_MAX_CHARS}자까지 미리 볼 수 있어요.")));
+        }
+        let v = Vocabulary { hints: vec![], replacements: replacements.into_iter().filter(|r| !r.find.is_empty()).collect() };
+        Ok(vocabulary::apply_replacements(&v, sample))
+    }
+
+    /// An imported vocabulary file, checked (size, version, caps, no control characters). Not stored:
+    /// the settings show it and the user saves it.
+    pub fn vocabulary_read_file(&self, path: &Path) -> ApiResult<Vocabulary> {
+        vocabulary::read_file(path)?.map_err(|p| ApiError::new("invalid_data", problem_text(&p)))
+    }
+
+    /// The stored vocabulary as the versioned JSON the import reads.
+    pub fn vocabulary_json(&self) -> ApiResult<String> {
+        Ok(vocabulary::to_json(&self.vocabulary()?))
+    }
+
+    /// The vocabulary for what is shown and exported: a damaged file counts as empty (the original
+    /// text is shown; the settings report the file).
+    fn shown_vocabulary(&self) -> Vocabulary {
+        vocabulary::load(&self.data_dir).unwrap_or_default()
+    }
+
+    /// The shown text of every word of a version (`vocabulary::display_words`), or None when the
+    /// replacements change nothing there. The stored version is not touched.
+    pub fn display_words(&self, version_id: &str) -> ApiResult<Option<Vec<String>>> {
+        let v = self.shown_vocabulary();
+        if v.replacements.is_empty() {
+            return Ok(None);
+        }
+        Ok(vocabulary::display_words(&v, &self.store()?.version(version_id)?))
     }
 
     /// Setup state of live captions. Missing parts are a note on the record screen, not an error:
@@ -489,17 +794,18 @@ impl Core {
         let pieces = model_setup::OFFERS
             .iter()
             .map(|o| {
-                let (model_var, unpinned_var, engine) = if o.role == live::ROLE_DIARIZATION {
-                    ("MEETKO_DIAR_MODEL", "MEETKO_DIAR_MODEL_UNPINNED", meetko_core::diarize::find_engine().is_ok())
+                let (model_var, unpinned_var, engine_var, engine) = if o.role == live::ROLE_DIARIZATION {
+                    ("MEETKO_DIAR_MODEL", "MEETKO_DIAR_MODEL_UNPINNED", "MEETKO_DIAR_ENGINE", meetko_core::diarize::find_engine().is_ok())
+                } else if o.role == live::ROLE_BATCH {
+                    ("MEETKO_BATCH_MODEL", "MEETKO_BATCH_MODEL_UNPINNED", "MEETKO_BATCH_ENGINE", batch::find_engine().is_ok())
                 } else {
-                    ("MEETKO_STREAM_MODEL", "MEETKO_STREAM_MODEL_UNPINNED", live::find_engine("nemotron-stream").is_ok())
+                    ("MEETKO_STREAM_MODEL", "MEETKO_STREAM_MODEL_UNPINNED", "MEETKO_STREAM_ENGINE", live::find_engine("nemotron-stream").is_ok())
                 };
-                let engine_var = if o.role == live::ROLE_DIARIZATION { "MEETKO_DIAR_ENGINE" } else { "MEETKO_STREAM_ENGINE" };
                 ModelPiece { engine_from_env: std::env::var_os(engine_var).is_some_and(|v| !v.is_empty()), ..model_piece(o, var(model_var), on(unpinned_var), &self.data_dir, engine) }
             })
             .collect();
         let card_dismissed = crate::meeting_watch::read_key(&self.data_dir, SETUP_CARD_KEY).and_then(|v| v.get("dismissed").and_then(|d| d.as_bool())).unwrap_or(false);
-        ModelSetup { dev_build: cfg!(debug_assertions), pieces, job: None, card_dismissed }
+        ModelSetup { dev_build: cfg!(debug_assertions), pieces, job: None, card_dismissed, batch_engine: self.batch_choice(), auto_retranscribe: self.auto_retranscribe() }
     }
 
     /// 나중에 on the setup card, kept in `app-settings.json` like the meeting detection switches.
@@ -566,7 +872,13 @@ impl Core {
     /// webview knows); without it the stored title, else the start date, is used.
     pub fn export_version(&self, version_id: &str, format: &str, title: Option<&str>) -> ApiResult<Export> {
         let format = ExportFormat::parse(format)?;
-        let md = self.store()?.version(version_id)?;
+        let store = self.store()?;
+        let md = store.version(version_id)?;
+        // what is exported is what the screen shows (overlay::display_text): the names, the edited
+        // text as typed, the vocabulary replacements on every other turn; the stored version unchanged
+        let overlay = store.overlay(version_id)?;
+        let vocabulary = self.shown_vocabulary();
+        let view = View::shown(&overlay, &vocabulary);
         let title = match (title, &md.meeting.title, &md.meeting.started_at) {
             (Some(t), _, _) if !t.trim().is_empty() => t.trim().to_string(),
             (_, Some(t), _) if !t.trim().is_empty() => t.clone(),
@@ -582,12 +894,12 @@ impl Core {
         };
         let doc = export::Doc { title: &title, unassigned: UNASSIGNED_LABEL, note };
         let text = match format {
-            ExportFormat::Markdown => export::markdown(&md, &doc, "전사")?,
-            ExportFormat::Text => export::timed_text(&md, &doc)?,
-            ExportFormat::Srt => export::srt(&md, UNASSIGNED_LABEL)?,
-            ExportFormat::Vtt => export::webvtt_with(&md, UNASSIGNED_LABEL, note)?,
-            ExportFormat::Plain => export::turns_text(&md, UNASSIGNED_LABEL, false, false)?,
-            ExportFormat::Speakers => export::turns_text(&md, UNASSIGNED_LABEL, false, true)?,
+            ExportFormat::Markdown => export::markdown(&md, &doc, "전사", &view)?,
+            ExportFormat::Text => export::timed_text(&md, &doc, &view)?,
+            ExportFormat::Srt => export::srt(&md, UNASSIGNED_LABEL, &view)?,
+            ExportFormat::Vtt => export::webvtt_with(&md, UNASSIGNED_LABEL, note, &view)?,
+            ExportFormat::Plain => export::turns_text(&md, UNASSIGNED_LABEL, false, false, &view)?,
+            ExportFormat::Speakers => export::turns_text(&md, UNASSIGNED_LABEL, false, true, &view)?,
         };
         let suffix = match md.version.kind {
             VersionKind::Live => "-실시간",
@@ -597,10 +909,42 @@ impl Core {
         Ok(Export { text, file_name: format!("{}{suffix}.{}", file_stem(&title), format.extension()), format })
     }
 
+    /// The speaker names, merges and edited turns `version_id` is shown with, and what earlier
+    /// transcripts of the meeting had that this one does not show.
+    pub fn overlay(&self, version_id: &str) -> ApiResult<OverlayView> {
+        let store = self.store()?;
+        let overlay = store.overlay(version_id)?;
+        Self::overlay_view(&store, version_id, overlay)
+    }
+
+    fn overlay_view(store: &Store, version_id: &str, overlay: Overlay) -> ApiResult<OverlayView> {
+        Ok(OverlayView { version_id: version_id.to_string(), overlay, set_aside: store.overlays_set_aside(version_id)? })
+    }
+
+    /// One change to the overlay of `version_id` (see `meetko_core::store::overlay`).
+    pub fn change_overlay(&self, version_id: &str, change: OverlayChange) -> ApiResult<OverlayView> {
+        let store = self.store()?;
+        let overlay = match change {
+            OverlayChange::Rename { speaker_id, name } => store.rename_speaker(version_id, &speaker_id, &name)?,
+            OverlayChange::Merge { speaker_id, into } => store.merge_speaker(version_id, &speaker_id, &into)?,
+            OverlayChange::ResetSpeaker { speaker_id } => store.reset_speaker(version_id, &speaker_id)?,
+            OverlayChange::Edit { turn_id, text } => store.edit_turn(version_id, &turn_id, &text)?,
+            OverlayChange::ResetTurn { turn_id } => store.reset_turn(version_id, &turn_id)?,
+            OverlayChange::DiscardSetAside => {
+                store.discard_set_aside(version_id)?;
+                store.overlay(version_id)?
+            }
+        };
+        Self::overlay_view(&store, version_id, overlay)
+    }
+
     /// Literal text search over each meeting's head version (see `meetko_core::store::search`).
     /// Any input is safe: it is never parsed as query syntax, and long input is cut.
+    /// The search reads the stored text (edited turns as edited); the snippets are shown with the
+    /// replacements applied to unedited text (each piece on its own: a rule that spans the edge of
+    /// the match is not applied there).
     pub fn search(&self, query: &str) -> ApiResult<SearchOutcome> {
-        Ok(self.store()?.search(query)?)
+        Ok(self.store()?.search_shown(query, Some(&self.shown_vocabulary()))?)
     }
 
     pub fn approve(&self, version_id: &str) -> ApiResult<String> {
@@ -655,6 +999,69 @@ impl Core {
         Ok((done.data.version.id, done.warnings))
     }
 
+    /// Run one `transcribe` job to its end (blocking; the app runs it on its own thread, holding the
+    /// job slot all along). Every event but the last goes to `emit`; the last one is returned, so the
+    /// caller can free the slot before the UI hears that the job is over.
+    ///
+    /// `FromLiveThenBatch` makes the live draft (its `done` goes to `emit` like any first draft), then,
+    /// when the setting is on and `pick_engine` finds a ready engine, transcribes the recording again
+    /// with it in the same slot (`auto` events). That pass reuses the speakers the live session
+    /// separated (`pipeline::transcribe_reusing`). Its draft is stored like any 다시 받아쓰기: it becomes
+    /// the head unless something is approved by then, and results made on the live draft go stale.
+    /// A failure or cancel of that pass leaves the live draft as it is.
+    pub fn run_draft_job(&self, kind: DraftJob, meeting_id: &str, engines: &dyn Engines, diar: &DiarSetup, emit: &dyn Fn(JobEvent), cancel: &AtomicBool) -> JobEvent {
+        let base = |state, from_live, pick: Option<Pick>| JobEvent {
+            state,
+            meeting_id: Some(meeting_id.to_string()),
+            from_live,
+            auto: kind == DraftJob::FromLiveThenBatch && !from_live,
+            engine: pick.map(|p| p.engine),
+            fallback: pick.is_some_and(|p| p.fallback),
+            ..Default::default()
+        };
+        let finish = |res: ApiResult<(String, Vec<String>)>, mut notes: Vec<String>, off: bool, from_live, pick| match res {
+            Ok((v, warnings)) => {
+                notes.extend(warnings);
+                let mut e = JobEvent { version_id: Some(v), ..base("done", from_live, pick) };
+                if !notes.is_empty() {
+                    // off: the model or engine could not be used at all; failed: a channel's separation failed
+                    (e.code, e.message) = (Some(if off { "diarization_off" } else { "diarization_failed" }), Some(notes.join("; ")));
+                }
+                e
+            }
+            Err(e) if e.code == "cancelled" => base("cancelled", from_live, pick),
+            Err(err) => JobEvent { code: Some(err.code), message: Some(err.message), ..base("error", from_live, pick) },
+        };
+        let batch = |pick: Pick, speakers_from: Option<String>, notes: Vec<String>, off: bool| {
+            let progress = |p: Progress| emit(JobEvent { channel: p.channel, channels: p.channels, percent: p.percent, diarizing: p.diarizing, ..base("progress", false, Some(pick)) });
+            // "preparing": staging or hashing a large model can take a while before any progress
+            emit(base("progress", false, Some(pick)));
+            let res = engines.open(pick.engine).and_then(|engine| {
+                let store = self.store()?;
+                let done = pipeline::transcribe_reusing(&store, &*engine, diar.engine, meeting_id, speakers_from.as_deref(), None, &progress, cancel)?;
+                Ok((done.data.version.id, done.warnings))
+            });
+            finish(res, notes, off, false, Some(pick))
+        };
+        if kind == DraftJob::Batch {
+            // nothing ready: the chosen engine (whisper for auto) is tried, so the error says what it misses
+            let choice = self.batch_choice();
+            let pick = pick_engine(choice, engines.ready()).unwrap_or(Pick { engine: if choice == batch::QWEN3_ASR { batch::QWEN3_ASR } else { batch::WHISPER }, fallback: false });
+            return batch(pick, None, diar.notes.clone(), diar.off);
+        }
+        let progress = |p: Progress| emit(JobEvent { channel: p.channel, channels: p.channels, percent: p.percent, diarizing: p.diarizing, ..base("progress", true, None) });
+        emit(base("progress", true, None));
+        let live = finish(self.draft_from_live(meeting_id, diar.engine, &progress, cancel), diar.notes.clone(), diar.off, true, None);
+        if kind == DraftJob::FromLive || live.state != "done" || cancel.load(std::sync::atomic::Ordering::SeqCst) || !self.auto_retranscribe() {
+            return live;
+        }
+        let Some(pick) = pick_engine(self.batch_choice(), engines.ready()) else { return live };
+        let speakers_from = live.version_id.as_deref().and_then(|v| self.store().ok()?.version_row(v).ok()?.parent);
+        emit(live);
+        // the speaker notes were said with the live draft already: only this pass's own failures
+        batch(pick, speakers_from, vec![], false)
+    }
+
     // ---------------------------------------------------------------- capture
 
     /// Import what a finished capture session left. Never fails the call: the UI needs the
@@ -699,6 +1106,9 @@ impl Core {
             description: p.description.clone(),
             network: manifest.permissions.network,
             audio: manifest.input.audio.clone(),
+            secrets: manifest.permissions.secrets.clone(),
+            settings: manifest.permissions.settings.clone(),
+            keeps_values: false,
             display: manifest.output.display.clone(),
             code_sha256: plugin_code_sha256(&manifest, dir)?,
             manifest_sha256: manifest_sha,
@@ -742,16 +1152,26 @@ impl Core {
         if (preview.audio != "none") != entry.permissions.audio {
             return Err(differs("audio permission"));
         }
+        if preview.secrets != entry.permissions.secrets {
+            return Err(differs("API key (secrets) list"));
+        }
+        if preview.settings != entry.permissions.settings {
+            return Err(differs("settings list"));
+        }
         preview.folder = spec.repo.clone();
         preview.source = Some(source_text(&fetched.source));
         preview.replaces = self.replaces(&preview.id, Some(&fetched.source))?;
+        preview.keeps_values = self.keeps_values(&preview, Some(&fetched.source))?;
         Ok((fetched, preview))
     }
 
     /// Install the tree the user saw. `expected_code_sha256` is the hash that was on screen;
     /// `replace` is the `replaces.key` the user confirmed (the installed state that was shown).
     pub fn gallery_install(&self, fetched: &plugin_source::Fetched, expected_code_sha256: &str, replace: Option<&str>) -> ApiResult<PluginPreview> {
-        let row = self.store()?.install_fetched(fetched, Some(expected_code_sha256), replace)?;
+        let store = self.store()?;
+        let prior = self.prior_of(&store, &fetched.dir)?;
+        let row = store.install_fetched(fetched, Some(expected_code_sha256), replace)?;
+        self.forget_moved(&store, prior);
         let mut preview = Self::preview(&row.dir)?;
         preview.source = Some(source_text(&fetched.source));
         Ok(preview)
@@ -760,6 +1180,7 @@ impl Core {
     pub fn inspect_plugin(&self, dir: &Path) -> ApiResult<PluginPreview> {
         let mut preview = Self::preview(dir)?;
         preview.replaces = self.replaces(&preview.id, None)?;
+        preview.keeps_values = self.keeps_values(&preview, None)?;
         Ok(preview)
     }
 
@@ -767,8 +1188,55 @@ impl Core {
     /// on screen: a folder that changed between the preview and the click is refused.
     pub fn add_plugin(&self, dir: &Path, expected_code_sha256: &str, replace: Option<&str>) -> ApiResult<PluginPreview> {
         // copies the folder into the data dir and verifies the COPY against the hash on screen
-        let row = self.store()?.install_plugin_from(dir, Some(expected_code_sha256), None, replace)?;
+        let store = self.store()?;
+        let prior = self.prior_of(&store, dir)?;
+        let row = store.install_plugin_from(dir, Some(expected_code_sha256), None, replace)?;
+        self.forget_moved(&store, prior);
         Self::preview(&row.dir)
+    }
+
+    /// The id is installed from the same origin and both versions declare keys or settings: the
+    /// saved values carry over (said in the consent dialog). From another origin they never do.
+    fn keeps_values(&self, preview: &PluginPreview, new: Option<&PluginSource>) -> ApiResult<bool> {
+        let store = self.store()?;
+        let declares = !(preview.secrets.is_empty() && preview.settings.is_empty());
+        let installed = match store.plugin(&preview.id) {
+            Ok((_, m)) => !(m.permissions.secrets.is_empty() && m.permissions.settings.is_empty()),
+            Err(meetko_core::Error::NotFound(_)) => false,
+            Err(e) => return Err(e.into()),
+        };
+        Ok(declares && installed && store.replaced_origin(&preview.id, new)?.is_none())
+    }
+
+    /// What is installed under the id of the plugin in `dir`, before an install over it.
+    fn prior_of(&self, store: &Store, dir: &Path) -> ApiResult<Option<secrets::Prior>> {
+        let (manifest, _) = Manifest::load(dir)?;
+        Ok(secrets::Prior::of(store, &manifest.package.id)?)
+    }
+
+    /// After an install: an id that moved to another origin loses the old origin's keys. They were
+    /// unreachable already (keys are per origin), so a failure here only leaves them behind.
+    fn forget_moved(&self, store: &Store, prior: Option<secrets::Prior>) {
+        if let Some(p) = prior {
+            let _ = p.forget_if_moved(store, &*self.secrets);
+        }
+    }
+
+    /// Each declared secret of an installed plugin and whether it is set. Never a value.
+    pub fn plugin_secrets(&self, plugin_id: &str) -> ApiResult<Vec<SecretState>> {
+        let store = self.store()?;
+        Ok(secrets::status(&store, &*self.secrets, plugin_id)?)
+    }
+
+    /// Save a secret the user typed; the answer is the new status only, the value never comes back.
+    pub fn set_plugin_secret(&self, plugin_id: &str, name: &str, value: &str) -> ApiResult<Vec<SecretState>> {
+        secrets::set(&self.store()?, &*self.secrets, plugin_id, name, value)?;
+        self.plugin_secrets(plugin_id)
+    }
+
+    pub fn clear_plugin_secret(&self, plugin_id: &str, name: &str) -> ApiResult<Vec<SecretState>> {
+        secrets::clear(&self.store()?, &*self.secrets, plugin_id, name)?;
+        self.plugin_secrets(plugin_id)
     }
 
     pub fn list_plugins(&self) -> ApiResult<Vec<PluginPreview>> {
@@ -785,6 +1253,9 @@ impl Core {
                     description: manifest.package.description.clone(),
                     network: row.network,
                     audio: row.audio,
+                    secrets: manifest.permissions.secrets.clone(),
+                    settings: manifest.permissions.settings.clone(),
+                    keeps_values: false,
                     display: manifest.output.display.clone(),
                     code_sha256: row.code_sha256,
                     manifest_sha256: row.manifest_sha256,
@@ -803,7 +1274,7 @@ impl Core {
     pub fn run_plugin(&self, plugin_id: &str, version_id: &str) -> ApiResult<ResultView> {
         let store = self.store()?;
         let secs = std::env::var("MEETKO_PLUGIN_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(host::DEFAULT_TIMEOUT.as_secs());
-        let id = pipeline::run_plugin(&store, plugin_id, version_id, Duration::from_secs(secs))?;
+        let id = pipeline::run_plugin_with(&store, &*self.secrets, plugin_id, version_id, Duration::from_secs(secs))?;
         store
             .results_for_version(version_id)?
             .into_iter()

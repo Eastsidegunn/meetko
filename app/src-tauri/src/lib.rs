@@ -8,11 +8,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use api::{ApiError, ApiResult, Core};
+use api::{ApiError, ApiResult, Core, DraftJob, JobEvent};
 use meetko_core::capture_run::{self, CaptureSession};
 use meetko_core::diarize::{DiarConfig, DiarEngine, DiarProcess};
 use meetko_core::live::{LiveConfig, LiveSession, LiveUpdate};
-use meetko_core::whisper::{Progress, WhisperCli};
 use serde::Serialize;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
@@ -44,6 +43,8 @@ struct Jobs {
     model: Option<(api::ModelJobView, Arc<AtomicBool>)>,
     /// a file dialog of `model_pick` is open
     model_picking: bool,
+    /// a file dialog of `vocabulary_import` or `vocabulary_export` is open
+    vocabulary_dialog: bool,
 }
 
 /// Resets a busy flag when dropped, so a panicking worker thread cannot leave the app stuck.
@@ -64,26 +65,6 @@ struct AppState {
     core: Arc<Core>,
     jobs: Mutex<Jobs>,
     meeting: Arc<meeting_watch::Shared>,
-}
-
-/// Payload of the `transcribe` and `plugin-run` events.
-#[derive(Serialize, Clone, Default)]
-struct JobEvent {
-    /// progress | done | error | cancelled
-    state: &'static str,
-    meeting_id: Option<String>,
-    version_id: Option<String>,
-    plugin_id: Option<String>,
-    result_id: Option<i64>,
-    channel: u32,
-    channels: u32,
-    percent: u8,
-    /// the channel is transcribed and its speakers are being separated
-    diarizing: bool,
-    /// the job makes the first draft from the live captions (no batch transcription)
-    from_live: bool,
-    code: Option<&'static str>,
-    message: Option<String>,
 }
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> ApiResult<T> + Send + 'static) -> ApiResult<T> {
@@ -204,12 +185,47 @@ async fn approve(state: State<'_, AppState>, version_id: String) -> ApiResult<St
     blocking(move || core.approve(&version_id)).await
 }
 
-/// What a `transcribe` job makes: a batch transcription (whisper), or the first draft from the
-/// meeting's live captions. Both share the one job slot, its cancel flag and its events.
-#[derive(Clone, Copy, PartialEq)]
-enum DraftJob {
-    Batch,
-    FromLive,
+/// Speaker names, merges and edited turns of a version (overlays; the version itself never changes).
+#[tauri::command]
+async fn overlay_get(state: State<'_, AppState>, version_id: String) -> ApiResult<api::OverlayView> {
+    let core = state.core.clone();
+    blocking(move || core.overlay(&version_id)).await
+}
+
+async fn change_overlay(state: State<'_, AppState>, version_id: String, change: api::OverlayChange) -> ApiResult<api::OverlayView> {
+    let core = state.core.clone();
+    blocking(move || core.change_overlay(&version_id, change)).await
+}
+
+#[tauri::command]
+async fn speaker_rename(state: State<'_, AppState>, version_id: String, speaker_id: String, name: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::Rename { speaker_id, name }).await
+}
+
+#[tauri::command]
+async fn speaker_merge(state: State<'_, AppState>, version_id: String, speaker_id: String, into: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::Merge { speaker_id, into }).await
+}
+
+#[tauri::command]
+async fn speaker_reset(state: State<'_, AppState>, version_id: String, speaker_id: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::ResetSpeaker { speaker_id }).await
+}
+
+#[tauri::command]
+async fn turn_edit(state: State<'_, AppState>, version_id: String, turn_id: String, text: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::Edit { turn_id, text }).await
+}
+
+#[tauri::command]
+async fn turn_reset(state: State<'_, AppState>, version_id: String, turn_id: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::ResetTurn { turn_id }).await
+}
+
+/// Forget the names and edits of earlier transcripts that `version_id` does not show.
+#[tauri::command]
+async fn overlay_discard(state: State<'_, AppState>, version_id: String) -> ApiResult<api::OverlayView> {
+    change_overlay(state, version_id, api::OverlayChange::DiscardSetAside).await
 }
 
 #[tauri::command]
@@ -223,59 +239,35 @@ async fn live_draft_start(app: AppHandle, state: State<'_, AppState>, meeting_id
     start_draft_job(&app, &state, meeting_id, DraftJob::FromLive)
 }
 
-fn start_draft_job(app: &AppHandle, state: &AppState, meeting_id: String, kind: DraftJob) -> ApiResult<()> {
-    let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let mut jobs = lock(state);
-        if jobs.transcribe.is_some() {
-            return Err(ApiError::new("busy", "a transcription is already running"));
-        }
-        jobs.transcribe = Some(cancel.clone());
+/// Take the one transcription slot, or say it is taken. A job keeps it from its start to its last
+/// event, the automatic 다시 받아쓰기 after a live draft included.
+fn claim_transcribe(jobs: &mut Jobs) -> ApiResult<Arc<AtomicBool>> {
+    if jobs.transcribe.is_some() {
+        return Err(ApiError::new("busy", "a transcription is already running"));
     }
+    let cancel = Arc::new(AtomicBool::new(false));
+    jobs.transcribe = Some(cancel.clone());
+    Ok(cancel)
+}
+
+fn start_draft_job(app: &AppHandle, state: &AppState, meeting_id: String, kind: DraftJob) -> ApiResult<()> {
+    let cancel = claim_transcribe(&mut lock(state))?;
     let core = state.core.clone();
     let app = app.clone();
     std::thread::spawn(move || {
         let _reset = Reset { app: app.clone(), f: |j| j.transcribe = None };
-        let event = |state, f: &dyn Fn(&mut JobEvent)| {
-            let mut e = JobEvent { state, meeting_id: Some(meeting_id.clone()), from_live: kind == DraftJob::FromLive, ..Default::default() };
-            f(&mut e);
-            e
-        };
-        let ev = |state, f: &dyn Fn(&mut JobEvent)| {
-            let _ = app.emit("transcribe", event(state, f));
-        };
-        let progress = |p: Progress| ev("progress", &|e| (e.channel, e.channels, e.percent, e.diarizing) = (p.channel, p.channels, p.percent, p.diarizing));
         // speaker separation is optional (MEETKO_DIAR_MODEL, like MEETKO_STREAM_MODEL for live captions)
         // and never costs the transcript: a model that is set but unusable is only a warning
-        let (diar, mut notes, off) = match DiarConfig::from_env() {
+        let (diar, notes, off) = match DiarConfig::from_env() {
             Ok(c) => (c.map(DiarProcess::new), vec![], false),
             Err(e) => (None, vec![format!("speaker separation is off: {e}")], true),
         };
-        // "preparing": hashing a large model for the first time can take a while before any progress.
-        // Every job sends it, so the UI knows a job runs even when it is over at once
-        ev("progress", &|e| e.channels = 0);
-        let diar_ref = diar.as_ref().map(|d| d as &dyn DiarEngine);
-        let res = match kind {
-            DraftJob::Batch => WhisperCli::load(&core.data_dir)
-                .map_err(ApiError::from)
-                .and_then(|engine| core.transcribe_diarized(&meeting_id, &engine, diar_ref, &progress, &cancel)),
-            DraftJob::FromLive => core.draft_from_live(&meeting_id, diar_ref, &progress, &cancel),
-        };
-        let last = match res {
-            Ok((v, warnings)) => {
-                notes.extend(warnings);
-                // the draft is stored; the UI shows what it could not do
-                event("done", &|e| {
-                    e.version_id = Some(v.clone());
-                    if !notes.is_empty() {
-                        // off: the model or engine could not be used at all; failed: a channel's separation failed
-                        (e.code, e.message) = (Some(if off { "diarization_off" } else { "diarization_failed" }), Some(notes.join("; ")));
-                    }
-                })
-            }
-            Err(e) if e.code == "cancelled" => event("cancelled", &|_| {}),
-            Err(err) => event("error", &|e| (e.code, e.message) = (Some(err.code), Some(err.message.clone()))),
-        };
+        let setup = api::DiarSetup { engine: diar.as_ref().map(|d| d as &dyn DiarEngine), notes, off };
+        let engines = api::SystemEngines { data_dir: core.data_dir.clone() };
+        let last = core.run_draft_job(kind, &meeting_id, &engines, &setup, &|e| {
+            let _ = app.emit("transcribe", e);
+        }, &cancel);
+        drop(setup);
         drop(diar); // ends the diarization engine process
         drop(_reset); // free the slot before the UI hears that the job is over (as plugin_run does)
         let _ = app.emit("transcribe", last);
@@ -334,6 +326,26 @@ async fn plugin_add(state: State<'_, AppState>, code_sha256: String, replace: Op
     let dir = lock(&state).pending_plugin.take().ok_or_else(|| ApiError::new("not_found", "no plugin was picked"))?;
     let core = state.core.clone();
     blocking(move || core.add_plugin(&dir, &code_sha256, replace.as_deref())).await
+}
+
+/// Plugin secrets (API keys): the webview learns only which declared names are set. A value goes
+/// one way, from the masked input to the keychain; no command returns it.
+#[tauri::command]
+async fn plugin_secrets(state: State<'_, AppState>, plugin_id: String) -> ApiResult<Vec<api::SecretState>> {
+    let core = state.core.clone();
+    blocking(move || core.plugin_secrets(&plugin_id)).await
+}
+
+#[tauri::command]
+async fn plugin_secret_set(state: State<'_, AppState>, plugin_id: String, name: String, value: String) -> ApiResult<Vec<api::SecretState>> {
+    let core = state.core.clone();
+    blocking(move || core.set_plugin_secret(&plugin_id, &name, &value)).await
+}
+
+#[tauri::command]
+async fn plugin_secret_clear(state: State<'_, AppState>, plugin_id: String, name: String) -> ApiResult<Vec<api::SecretState>> {
+    let core = state.core.clone();
+    blocking(move || core.clear_plugin_secret(&plugin_id, &name)).await
 }
 
 /// Gallery: all three touch the network only because the user clicked (browse / install), and the
@@ -480,6 +492,94 @@ async fn setup_card_dismiss(state: State<'_, AppState>) -> ApiResult<()> {
     blocking(move || core.dismiss_setup_card()).await
 }
 
+/// The engine 다시 받아쓰기 uses from now on (`auto` | `whisper` | `qwen3-asr`), kept in `app-settings.json`.
+#[tauri::command]
+async fn batch_engine_set(state: State<'_, AppState>, engine: String) -> ApiResult<()> {
+    let core = state.core.clone();
+    blocking(move || core.set_batch_engine(&engine)).await
+}
+
+/// Whether a stopped recording is transcribed again on its own, kept in `app-settings.json`.
+#[tauri::command]
+async fn auto_retranscribe_set(state: State<'_, AppState>, on: bool) -> ApiResult<()> {
+    let core = state.core.clone();
+    blocking(move || core.set_auto_retranscribe(on)).await
+}
+
+// ---------------------------------------------------------------- vocabulary (용어 사전)
+
+#[tauri::command]
+async fn vocabulary_get(state: State<'_, AppState>) -> ApiResult<meetko_core::vocabulary::Vocabulary> {
+    let core = state.core.clone();
+    blocking(move || core.vocabulary()).await
+}
+
+/// Store the whole vocabulary (checked); returns what was kept.
+#[tauri::command]
+async fn vocabulary_set(state: State<'_, AppState>, vocabulary: meetko_core::vocabulary::Vocabulary) -> ApiResult<meetko_core::vocabulary::Vocabulary> {
+    let core = state.core.clone();
+    blocking(move || core.set_vocabulary(vocabulary)).await
+}
+
+/// The settings' live preview of replacements that are not stored yet.
+#[tauri::command]
+async fn vocabulary_preview(state: State<'_, AppState>, replacements: Vec<meetko_core::vocabulary::Replacement>, sample: String) -> ApiResult<String> {
+    state.core.vocabulary_preview(replacements, &sample)
+}
+
+/// The shown text of each word of a version, or null when the replacements change nothing there.
+#[tauri::command]
+async fn vocabulary_display(state: State<'_, AppState>, version_id: String) -> ApiResult<Option<Vec<String>>> {
+    let core = state.core.clone();
+    blocking(move || core.display_words(&version_id)).await
+}
+
+fn claim_vocabulary_dialog(state: &State<'_, AppState>) -> ApiResult<()> {
+    let mut jobs = lock(state);
+    if jobs.vocabulary_dialog {
+        return Err(ApiError::new("busy", "a file dialog is already open"));
+    }
+    jobs.vocabulary_dialog = true;
+    Ok(())
+}
+
+/// Native open dialog, then read and check the file. The path stays in Rust; the vocabulary comes back
+/// unsaved (the settings show it, the user saves it). None when the user cancelled.
+#[tauri::command]
+async fn vocabulary_import(app: AppHandle, window: WebviewWindow, state: State<'_, AppState>) -> ApiResult<Option<meetko_core::vocabulary::Vocabulary>> {
+    claim_vocabulary_dialog(&state)?;
+    let _reset = Reset { app: app.clone(), f: |j| j.vocabulary_dialog = false };
+    let dialog = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || dialog.dialog().file().set_parent(&window).add_filter("JSON", &["json"]).blocking_pick_file())
+        .await
+        .map_err(|e| ApiError::new("error", e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    let core = state.core.clone();
+    blocking(move || core.vocabulary_read_file(&path).map(Some)).await
+}
+
+/// Native save dialog, then write the stored vocabulary as versioned JSON. Returns the file's name, or
+/// None when the user cancelled.
+#[tauri::command]
+async fn vocabulary_export(app: AppHandle, window: WebviewWindow, state: State<'_, AppState>) -> ApiResult<Option<String>> {
+    claim_vocabulary_dialog(&state)?;
+    let _reset = Reset { app: app.clone(), f: |j| j.vocabulary_dialog = false };
+    let core = state.core.clone();
+    let json = blocking(move || core.vocabulary_json()).await?;
+    let dialog = app.clone();
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        dialog.dialog().file().set_parent(&window).set_file_name("meetko-용어사전.json").add_filter("JSON", &["json"]).blocking_save_file()
+    })
+    .await
+    .map_err(|e| ApiError::new("error", e.to_string()))?;
+    let Some(path) = picked.and_then(|p| p.into_path().ok()) else { return Ok(None) };
+    blocking(move || {
+        std::fs::write(&path, json.as_bytes()).map_err(|e| ApiError::new("export_write_failed", e.to_string()))?;
+        Ok(Some(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()))
+    })
+    .await
+}
+
 #[tauri::command]
 async fn model_cancel(state: State<'_, AppState>) -> ApiResult<()> {
     if let Some((_, flag)) = &lock(&state).model {
@@ -515,11 +615,14 @@ async fn capture_start(app: AppHandle, state: State<'_, AppState>) -> ApiResult<
         })?)
     })
     .await?;
-    // Live captions are best effort and never part of the start: no config, no captions.
+    // Live captions are best effort and never part of the start: no config, no captions. Speaker
+    // separation runs next to them when its model and engine are there (as for the draft); without
+    // them, or if it fails or falls behind, the draft separates the speakers after the recording.
     let live = LiveConfig::from_env().ok().map(|cfg| {
         let emitter = app.clone();
-        LiveSession::start(
+        LiveSession::start_with(
             cfg,
+            DiarConfig::from_env().ok().flatten(),
             session.out_dir(),
             Arc::new(move |u: LiveUpdate| {
                 let st = emitter.state::<AppState>();
@@ -527,6 +630,7 @@ async fn capture_start(app: AppHandle, state: State<'_, AppState>) -> ApiResult<
                     let _ = emitter.emit("live", u);
                 }
             }),
+            None,
         )
     });
     {
@@ -582,14 +686,16 @@ async fn capture_stop(app: AppHandle, state: State<'_, AppState>) -> ApiResult<a
         Ok(core.finish_capture(&outcome, live_out.as_ref()))
     })
     .await?;
-    // The live captions are the first draft: review, approval and plugins work without whisper.
+    // The live captions are the first draft: review, approval and plugins work without a batch
+    // engine. Then, in the same job slot, the most accurate ready engine transcribes the recording
+    // again (unless turned off in the settings); the live draft stays readable meanwhile.
     // Only for a meeting that has no draft yet (a re-imported recording may have one), and only when
-    // the job slot is free; otherwise the meeting screen offers the same as a button.
+    // the job slot is free; otherwise the meeting screen offers the same as buttons.
     if let (Some(m), Some(_)) = (&done.meeting_id, &done.live_version_id) {
         let core = state.core.clone();
         let m2 = m.clone();
         if blocking(move || core.live_draft_source(&m2)).await.ok().flatten().is_some() {
-            let _ = start_draft_job(&app, &state, m.clone(), DraftJob::FromLive);
+            let _ = start_draft_job(&app, &state, m.clone(), DraftJob::FromLiveThenBatch);
         }
     }
     Ok(done)
@@ -751,9 +857,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             status, list_meetings, get_meeting, get_version, resolve_anchor, approve, transcribe_start, live_draft_start, transcribe_cancel,
             capture_start, capture_stop, list_plugins, plugin_pick, plugin_add, plugin_run, list_results, list_stale,
+            plugin_secrets, plugin_secret_set, plugin_secret_clear,
             gallery_list, gallery_preview, gallery_install, export_version, export_save,
             meeting_watch_get, meeting_watch_set, meeting_prompt_answer,
-            search, model_setup, model_download, model_pick, model_cancel, setup_card_dismiss
+            search, model_setup, model_download, model_pick, model_cancel, setup_card_dismiss, batch_engine_set, auto_retranscribe_set,
+            overlay_get, speaker_rename, speaker_merge, speaker_reset, turn_edit, turn_reset, overlay_discard,
+            vocabulary_get, vocabulary_set, vocabulary_preview, vocabulary_import, vocabulary_export, vocabulary_display
         ])
         .run(tauri::generate_context!())
         .expect("error while running the meetko app");
@@ -777,6 +886,18 @@ mod tests {
         let mut jobs = Jobs { capture_gen: 3, ..Default::default() };
         assert_eq!(take_for_stop(&mut jobs).err().expect("refused").code, "not_found");
         assert_eq!(jobs.capture_gen, 3);
+    }
+
+    /// One transcription at a time: a second start (a click, or the live draft of another recording)
+    /// is `busy` while a job, its automatic 다시 받아쓰기 included, holds the slot.
+    #[test]
+    fn the_transcription_slot_is_taken_once() {
+        let mut jobs = Jobs::default();
+        let cancel = claim_transcribe(&mut jobs).expect("free");
+        assert_eq!(claim_transcribe(&mut jobs).expect_err("taken").code, "busy");
+        assert!(Arc::ptr_eq(jobs.transcribe.as_ref().unwrap(), &cancel), "the first job keeps its cancel flag");
+        jobs.transcribe = None; // what the job's Reset does when it ends
+        assert!(claim_transcribe(&mut jobs).is_ok());
     }
 
     /// A command registered in `generate_handler!` but missing from `build.rs` or the capability is

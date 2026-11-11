@@ -4,7 +4,7 @@
 // fed by the `model-setup` events. The app status lives here too once it changes: views that show
 // setup subscribe and repaint themselves in place, so a finished download or 다시 확인 never rebuilds
 // the screen (focus, scroll and the search field stay where they were).
-import { api, onModelSetup, whisperReady, type ApiError, type ModelEvent, type ModelKey, type ModelPiece, type ModelSetup, type Status } from "./api";
+import { api, engineName, onModelSetup, whisperReady, type ApiError, type BatchChoice, type BatchEngineId, type ModelEvent, type ModelKey, type ModelPiece, type ModelSetup, type Status } from "./api";
 import { announce, h, notice, type Child } from "./dom";
 
 /** the job in flight (last progress), the last failure, and the model that just became ready */
@@ -15,10 +15,13 @@ const statusSubs = new Set<(s: Status) => void>();
 let fetchStatus: () => Promise<Status> = () => api.status();
 let current: Status | null = null;
 
-const NAME: Record<ModelKey, string> = { stream: "실시간 자막 모델", diarization: "화자 구분 모델" };
-const ENGINE: Record<ModelKey, { bin: string; env: string; what: string }> = {
-  stream: { bin: "meetko-nemotron-stream", env: "MEETKO_STREAM_ENGINE", what: "실시간 자막" },
-  diarization: { bin: "meetko-nemotron-diar", env: "MEETKO_DIAR_ENGINE", what: "화자 구분" },
+const NAME: Record<ModelKey, string> = { stream: "실시간 자막 모델", diarization: "화자 구분 모델", "qwen3-asr": "Qwen3-ASR 받아쓰기 모델", "qwen3-aligner": "Qwen3 단어 시각 모델" };
+const QWEN_ENGINE = { bin: "meetko-qwen3-asr", env: "MEETKO_BATCH_ENGINE", what: "Qwen3-ASR 다시 받아쓰기", dir: "qwen3-asr" };
+const ENGINE: Record<ModelKey, { bin: string; env: string; what: string; dir: string }> = {
+  stream: { bin: "meetko-nemotron-stream", env: "MEETKO_STREAM_ENGINE", what: "실시간 자막", dir: "nemotron-stream" },
+  diarization: { bin: "meetko-nemotron-diar", env: "MEETKO_DIAR_ENGINE", what: "화자 구분", dir: "nemotron-stream" },
+  "qwen3-asr": QWEN_ENGINE,
+  "qwen3-aligner": QWEN_ENGINE,
 };
 
 /** Called once at boot. `fetch` reads the app status again (and keeps the app's copy). */
@@ -103,7 +106,8 @@ function setupBox(paint: Paint, onCleanup: (f: () => void) => void, lostFocus: (
     box.replaceChildren(...[paint(setup, current)].flat(3).filter((c): c is Node | string => !!c));
     if (!was) return;
     // the same control when it is still there, else the box's main one, else away from the box
-    const same = [...box.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], summary")].find((el) => el.tagName === was.tagName && el.textContent === was.textContent);
+    const same = [...box.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], summary, input[id]")]
+      .find((el) => (was.id ? el.id === was.id : el.tagName === was.tagName && el.textContent === was.textContent));
     const next = same ?? box.querySelector<HTMLElement>("[data-autofocus]") ?? box.querySelector<HTMLElement>("button:not(:disabled), a[href]");
     if (next) next.focus(); else lostFocus();
   };
@@ -216,8 +220,8 @@ function engineHelp(dev: boolean, key: ModelKey, fromEnv = false): HTMLElement {
     return h("div", { class: "ms-engine" },
       h("p", { class: "c-2 t-footnote", text: `${e.what}은 엔진이 있어야 돌아가요. 개발 빌드에서는 저장소에서 엔진을 한 번 빌드하면 앱이 알아서 찾아요.` }),
       h("ol", { class: "steps" },
-        h("li", {}, h("span", {}, "저장소 맨 위 폴더에서 ", h("code", { class: "mono", text: "engines/nemotron-stream/fetch-libs.sh" }), "를 실행해요.")),
-        h("li", {}, h("span", {}, "이어서 ", h("code", { class: "mono", text: "cd engines/nemotron-stream && cargo build" }), "를 실행해요.")),
+        h("li", {}, h("span", {}, "저장소 맨 위 폴더에서 ", h("code", { class: "mono", text: `engines/${e.dir}/fetch-libs.sh` }), "를 실행해요.")),
+        h("li", {}, h("span", {}, "이어서 ", h("code", { class: "mono", text: `cd engines/${e.dir} && cargo build` }), "를 실행해요.")),
         h("li", {}, h("span", { text: "‘다시 확인’을 눌러요." }))));
   }
   return devDetails("직접 설정하기 (개발자용)",
@@ -324,7 +328,7 @@ function modelBody(p: ModelPiece, s: ModelSetup, envVar: string, primary: boolea
   }
   if (p.state === "ready") return h("p", { class: "c-3 t-footnote num", text: `앱이 받아 둔 모델 · 약 ${mb(p.size)} · ${p.license}` });
   // the stream engine has its own row with the details; the diarization engine is only named here
-  if (!offerable(p, s)) return [h("p", { class: "c-3 t-footnote", text: "엔진이 준비되면 받을 수 있어요." }), p.key === "diarization" ? engineHelp(false, p.key) : null];
+  if (!offerable(p, s)) return [h("p", { class: "c-3 t-footnote", text: "엔진이 준비되면 받을 수 있어요." }), p.key === "diarization" || p.key === "qwen3-asr" ? engineHelp(false, p.key) : null];
   return [p.state === "bad" ? h("p", { class: "c-2 t-footnote", text: "받아 둔 파일이 원래 파일과 달라서 쓰지 않아요. 다시 받거나 원래 파일을 골라 주세요." }) : null,
     meta(p), actions(p, s, primary)];
 }
@@ -352,10 +356,92 @@ export function setupSection(onCleanup: (f: () => void) => void): HTMLElement {
         modelBody(d, s, "MEETKO_DIAR_MODEL", false),
         d.engine || !(s.dev_build || d.engine_from_env) ? null : engineHelp(s.dev_build, "diarization", d.engine_from_env)));
     }
+    rows.push(batchEngineRow(s, status));
     rows.push(whisperRow(status));
+    const qa = piece(s, "qwen3-asr"), ql = piece(s, "qwen3-aligner");
+    if (qa && ql) {
+      const desc = "실험 기능 · 결과를 확인해 주세요. 다시 받아쓰기를 Qwen3-ASR로 할 때 필요해요.";
+      rows.push(pieceRow(NAME["qwen3-asr"], modelTag(qa, s, true), `${desc} 녹음을 글로 받아 적어요.`, modelBody(qa, s, "MEETKO_BATCH_MODEL", false)));
+      rows.push(pieceRow(NAME["qwen3-aligner"], modelTag(ql, s, true), `${desc} 받아 적은 낱말마다 녹음의 어느 때인지 맞춰요.`, modelBody(ql, s, "MEETKO_BATCH_MODEL", false)));
+      // the engine is only named here when it is the one thing missing (a dev build, or a variable that points nowhere)
+      if (!qa.engine && (s.dev_build || qa.engine_from_env)) {
+        rows.push(pieceRow("Qwen3-ASR 엔진", stateTag("필요", "warn"), "두 모델을 돌리는 프로그램이에요.", engineHelp(s.dev_build, "qwen3-asr", qa.engine_from_env)));
+      }
+    }
     return h("div", { class: "ms-list", role: "list" }, ...rows);
   }, onCleanup);
   return h("section", { class: "set-sec" }, h("h2", { text: "받아쓰기 준비" }), box);
+}
+
+const BATCH: { id: BatchChoice; label: string }[] = [
+  { id: "auto", label: "자동 (준비된 것 중 가장 정확한 것)" }, { id: "whisper", label: "Whisper" }, { id: "qwen3-asr", label: "Qwen3-ASR (실험)" }];
+const mbSum = (ps: (ModelPiece | undefined)[]): string => mb(ps.reduce((n, p) => n + (p?.size ?? 0), 0));
+
+/** Which engine 다시 받아쓰기 uses: 자동 (the default: Qwen3-ASR when it is ready, else Whisper), or one of
+ *  them (a chosen one that is not ready falls back to the other), each 준비됨 / 필요; and whether a
+ *  recording is transcribed again on its own once its live draft exists. */
+function batchEngineRow(s: ModelSetup, status: Status): HTMLElement {
+  const qa = piece(s, "qwen3-asr"), ql = piece(s, "qwen3-aligner");
+  const qwenReady = !!qa && !!ql && qa.state === "ready" && ql.state === "ready" && qa.engine;
+  const ready: Record<BatchEngineId, boolean> = { whisper: whisperReady(status), "qwen3-asr": qwenReady };
+  const msg = h("div", { role: "status" });
+  const seg = h("div", { class: "seg seg-wrap", role: "radiogroup", "aria-label": "다시 받아쓰기 엔진" });
+  for (const e of BATCH) {
+    const b = h("button", { type: "button", class: "btn", role: "radio", "aria-checked": String(s.batch_engine === e.id), text: e.label,
+      onclick: async () => {
+        if (s.batch_engine === e.id || b.getAttribute("aria-disabled") === "true") return;
+        b.setAttribute("aria-disabled", "true");
+        try {
+          await api.batchEngineSet(e.id);
+          announce(`다시 받아쓰기 엔진을 ${e.id === "auto" ? "자동" : e.label}(으)로 바꿨어요.`);
+          await recheck(); // the box repaints with the new choice
+        } catch {
+          b.removeAttribute("aria-disabled");
+          msg.replaceChildren(notice("danger", "바꾸지 못했어요.", "잠시 뒤 다시 시도해 주세요."));
+        }
+      } });
+    seg.append(b);
+  }
+  const line = (name: string, id: BatchEngineId, text: string) => h("li", { class: "c-2 t-footnote" },
+    h("span", { text: `${name} · ` }), ready[id] ? stateTag("준비됨", "ok") : stateTag("필요", "warn"), h("span", { class: "num", text: ` ${text}` }));
+  const qwenMeta = qa ? `약 ${mbSum([qa, ql])} · ${qa.publisher} · ${qa.license} 라이선스 · 엔진 CrispASR(MIT) · 받은 뒤에는 인터넷 없이 이 기기에서만 돌아가요.` : "";
+  // which engine runs now, from the app's own check (it also knows whether the engine's sandbox applies)
+  const now = status.batch.ok
+    ? status.batch_fallback
+      ? `고른 엔진이 아직 준비되지 않아서 지금은 ${engineName(status.batch_engine)}로 받아써요.`
+      : s.batch_engine === "auto" ? `지금은 ${engineName(status.batch_engine)}로 받아써요.${status.batch_engine === "whisper" ? " Qwen3-ASR이 준비되면 더 정확한 Qwen3-ASR을 써요." : ""}` : ""
+    : s.batch_engine === "qwen3-asr" ? "아래 두 모델과 엔진이 준비되면 쓸 수 있어요. 그 전에는 다시 받아쓰기를 할 수 없어요."
+    : "Whisper나 Qwen3-ASR 중 하나가 준비되면 쓸 수 있어요. 그 전에는 다시 받아쓰기를 할 수 없어요.";
+  return pieceRow("다시 받아쓰기 엔진", s.batch_engine === "qwen3-asr" || (status.batch.ok && status.batch_engine === "qwen3-asr") ? stateTag("실험 기능", "warn") : stateTag("기본", "none"),
+    "녹음 전체를 다시 받아 적을 때 쓸 엔진이에요. 실시간 자막에는 영향이 없어요.",
+    seg,
+    h("ul", { class: "ms-engines" },
+      line("Whisper", "whisper", "따로 설치해요(아래 ‘다시 받아쓰기용 Whisper’). MIT 라이선스."),
+      line("Qwen3-ASR", "qwen3-asr", `실험 기능 · 결과를 확인해 주세요. ${qwenMeta}`)),
+    now ? h("p", { class: "c-3 t-footnote", text: now }) : null,
+    autoRetranscribeBox(s, msg),
+    msg);
+}
+
+/** 녹음이 끝나면 자동으로 다시 받아쓰기: on by default; kept in the data folder like the engine choice. */
+function autoRetranscribeBox(s: ModelSetup, msg: HTMLElement): HTMLElement {
+  const box = h("input", { type: "checkbox", id: "auto-retx" }) as HTMLInputElement;
+  box.checked = s.auto_retranscribe;
+  box.addEventListener("change", async () => {
+    const on = box.checked;
+    msg.replaceChildren();
+    try {
+      await api.autoRetranscribeSet(on);
+      announce(on ? "녹음이 끝나면 자동으로 다시 받아써요." : "녹음이 끝나도 자동으로 다시 받아쓰지 않아요.");
+      await recheck();
+    } catch {
+      box.checked = !on;
+      msg.replaceChildren(notice("danger", "설정을 저장하지 못했어요.", "잠시 뒤 다시 시도해 주세요."));
+    }
+  });
+  return h("div", {},
+    h("label", { class: "mw-row", for: "auto-retx" }, box, h("span", { text: "녹음이 끝나면 자동으로 다시 받아쓰기" })),
+    h("p", { class: "c-3 t-footnote", text: "실시간 자막 초안을 먼저 만들고, 이어서 위 엔진으로 녹음 전체를 다시 받아 적어 새 초안을 만들어요. 10분 회의에 몇 분 걸리고, 그동안 실시간 자막 초안을 읽을 수 있어요. 승인한 버전이 있으면 새 초안은 승인해야 기준이 돼요." }));
 }
 
 /** whisper stays manual: the app does not download programs. Optional, for 다시 받아쓰기 only. */

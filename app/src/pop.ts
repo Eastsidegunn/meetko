@@ -27,6 +27,8 @@ export function openPop(anchor: HTMLElement, content: Child, { align = "left" }:
   const items = [...el.querySelectorAll<HTMLElement>("button")];
   const onDown = (e: Event) => { if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) closePop(); };
   const onKey = (e: KeyboardEvent) => {
+    // an input method (Korean) is composing in a field of the popover: Escape and the arrows are its own
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === "Escape") { e.stopPropagation(); closePop(); }
     else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -52,9 +54,10 @@ export function openDialog(label: string, build: (dlg: HTMLElement, close: () =>
     onClose?.();
   };
   const onKey = (e: KeyboardEvent) => {
+    if (e.isComposing || e.keyCode === 229) return; // the input method's own keys
     if (e.key === "Escape") { e.stopPropagation(); close(); return; }
     if (e.key !== "Tab") return;
-    const f = [...dlg.querySelectorAll<HTMLElement>("button:not(:disabled)")];
+    const f = [...dlg.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)")];
     if (!f.length) return;
     const i = f.indexOf(document.activeElement as HTMLElement);
     if (e.shiftKey && i <= 0) { f[f.length - 1].focus(); e.preventDefault(); }

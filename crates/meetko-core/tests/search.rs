@@ -167,7 +167,7 @@ fn a_version_3_database_is_backfilled_on_open() {
     let db = tmp.path().join("data/meetko.db");
     {
         let conn = rusqlite::Connection::open(&db).unwrap();
-        conn.execute_batch("DROP TABLE search_docs; DROP TABLE search_fts; PRAGMA user_version = 3;").unwrap();
+        conn.execute_batch("DROP TABLE search_docs; DROP TABLE search_fts; DROP TABLE agent_provenance; DROP TABLE speaker_overlays; DROP TABLE turn_edits; PRAGMA user_version = 3;").unwrap();
     }
     let s = Store::open(&tmp.path().join("data")).unwrap();
     let r = find(&s, "백필확인").unwrap();
@@ -175,7 +175,7 @@ fn a_version_3_database_is_backfilled_on_open() {
     assert_eq!(r[0].kind, "approved");
     let conn = rusqlite::Connection::open(&db).unwrap();
     let v: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(v, 4);
+    assert_eq!(v, 6);
     drop(s);
     Store::open(&tmp.path().join("data")).unwrap(); // reopening migrates nothing
 }
@@ -226,7 +226,7 @@ fn long_meeting(meeting: &str, reps: usize) -> MeetingData {
 /// Simulate a database written before migration 4: the search tables are gone.
 fn back_to_v3(data: &Path) {
     let conn = rusqlite::Connection::open(data.join("meetko.db")).unwrap();
-    conn.execute_batch("DROP TABLE search_docs; DROP TABLE search_fts; PRAGMA user_version = 3;").unwrap();
+    conn.execute_batch("DROP TABLE search_docs; DROP TABLE search_fts; DROP TABLE agent_provenance; DROP TABLE speaker_overlays; DROP TABLE turn_edits; PRAGMA user_version = 3;").unwrap();
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn the_backfill_is_incremental_and_reported_as_pending() {
     let s = Store::open(&data).unwrap();
     let conn = rusqlite::Connection::open(data.join("meetko.db")).unwrap();
     let v: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(v, 4, "the schema is committed first");
+    assert_eq!(v, 6, "the schema is committed first");
     // empty the rows the open may have filled: the next steps fill them one meeting at a time
     conn.execute_batch("DELETE FROM search_fts; DELETE FROM search_docs;").unwrap();
     assert_eq!(s.index_pending(Some(std::time::Duration::ZERO)).unwrap(), 3);

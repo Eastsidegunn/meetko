@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use crate::contract::{MeetingData, Turn, Word};
 use crate::error::{Error, Result};
+use crate::overlay::View;
 
 fn secs(ms: i64) -> String {
     format!("{:.3}", ms as f64 / 1000.0)
@@ -26,16 +27,8 @@ fn clock(ms: i64) -> String {
     format!("{:02}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60)
 }
 
-fn labels(md: &MeetingData) -> HashMap<&str, &str> {
-    md.speakers.iter().map(|s| (s.id.as_str(), s.label.as_deref().unwrap_or(&s.id))).collect()
-}
-
 fn positions(md: &MeetingData) -> HashMap<&str, usize> {
     md.words.iter().enumerate().map(|(i, w)| (w.id.as_str(), i)).collect()
-}
-
-fn joined(run: &[Word]) -> String {
-    run.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ")
 }
 
 /// NIST CTM: `<file> <chan> <start> <dur> <word> [<conf>]`
@@ -73,18 +66,18 @@ pub fn text(md: &MeetingData, channel: u32) -> String {
 
 /// Errors (never panics) when a turn names a word the data does not have.
 pub fn webvtt(md: &MeetingData) -> Result<String> {
-    webvtt_with(md, "?", None)
+    webvtt_with(md, "?", None, &View::plain())
 }
 
 /// WebVTT with `unassigned` as the voice of a turn without a speaker, and an optional `NOTE`
-/// block after the header (players skip it).
-pub fn webvtt_with(md: &MeetingData, unassigned: &str, note: Option<&str>) -> Result<String> {
+/// block after the header (players skip it). Names and text as `view` shows them.
+pub fn webvtt_with(md: &MeetingData, unassigned: &str, note: Option<&str>, view: &View) -> Result<String> {
     let mut out: Vec<String> = vec!["WEBVTT".into(), String::new()];
     if let Some(n) = note {
         // one line, and no "-->" (it would end the block): `>` is escaped like in a cue
         out.extend([format!("NOTE {}", cue_escape(n)), String::new()]);
     }
-    for (t, who, text) in turn_lines(md, unassigned)? {
+    for (t, who, text) in turn_lines(md, unassigned, view)? {
         out.push(t.id.clone());
         out.push(format!("{} --> {}", clock_ms(t.start_ms, '.'), clock_ms(t.end_ms, '.')));
         out.push(format!("<v {}>{}", cue_escape(who), cue_escape(&text)));
@@ -116,16 +109,20 @@ pub fn turn_words<'a>(md: &'a MeetingData, pos: &HashMap<&str, usize>, t: &Turn)
     }
 }
 
-/// (turn, speaker label, text) per turn; a turn without a speaker gets `unassigned`.
-fn turn_lines<'a>(md: &'a MeetingData, unassigned: &'a str) -> Result<Vec<(&'a Turn, &'a str, String)>> {
-    let (labels, pos) = (labels(md), positions(md));
-    md.turns
-        .iter()
-        .map(|t| {
-            let who = t.speaker.as_deref().and_then(|s| labels.get(s).copied()).unwrap_or(unassigned);
-            Ok((t, who, joined(turn_words(md, &pos, t)?)))
-        })
-        .collect()
+/// (turn, speaker name, text) per turn as `view` shows them (`overlay::display_text`); a turn
+/// without a speaker gets `unassigned`. A turn left with no text (every word removed by a
+/// vocabulary replacement) is not a line.
+fn turn_lines<'a>(md: &'a MeetingData, unassigned: &'a str, view: &View<'a>) -> Result<Vec<(&'a Turn, &'a str, String)>> {
+    let pos = positions(md);
+    let mut out = Vec::with_capacity(md.turns.len());
+    for t in &md.turns {
+        let who = view.speaker(md, t.speaker.as_deref()).unwrap_or(unassigned);
+        let text = view.text(md, &pos, t)?;
+        if !text.is_empty() {
+            out.push((t, who, text));
+        }
+    }
+    Ok(out)
 }
 
 /// What a reader sees that the meeting data does not carry. The caller picks the wording (the
@@ -139,8 +136,8 @@ pub struct Doc<'a> {
 }
 
 /// One turn per line: `[hh:mm:ss] speaker: text`, either part left out on request.
-pub fn turns_text(md: &MeetingData, unassigned: &str, stamps: bool, speakers: bool) -> Result<String> {
-    Ok(turn_lines(md, unassigned)?
+pub fn turns_text(md: &MeetingData, unassigned: &str, stamps: bool, speakers: bool, view: &View) -> Result<String> {
+    Ok(turn_lines(md, unassigned, view)?
         .into_iter()
         .map(|(t, who, text)| {
             let stamp = if stamps { format!("[{}] ", clock(t.start_ms)) } else { String::new() };
@@ -151,9 +148,9 @@ pub fn turns_text(md: &MeetingData, unassigned: &str, stamps: bool, speakers: bo
 }
 
 /// Plain text with stamps and speakers, under the title (and the note).
-pub fn timed_text(md: &MeetingData, doc: &Doc) -> Result<String> {
+pub fn timed_text(md: &MeetingData, doc: &Doc, view: &View) -> Result<String> {
     let note = doc.note.map(|n| format!("{n}\n")).unwrap_or_default();
-    Ok(format!("{}\n{note}\n{}", doc.title, turns_text(md, doc.unassigned, true, true)?))
+    Ok(format!("{}\n{note}\n{}", doc.title, turns_text(md, doc.unassigned, true, true, view)?))
 }
 
 /// The latest time SRT can write: its hours field has two digits.
@@ -161,9 +158,9 @@ const SRT_MAX_MS: i64 = 100 * 3_600_000 - 1;
 
 /// SubRip: numbered cues, one per turn, the speaker in front of the text. Times past
 /// 99:59:59,999 are written as that (a meeting that long is not expected).
-pub fn srt(md: &MeetingData, unassigned: &str) -> Result<String> {
+pub fn srt(md: &MeetingData, unassigned: &str, view: &View) -> Result<String> {
     let ts = |ms: i64| clock_ms(ms.clamp(0, SRT_MAX_MS), ',');
-    Ok(turn_lines(md, unassigned)?
+    Ok(turn_lines(md, unassigned, view)?
         .into_iter()
         .enumerate()
         .map(|(i, (t, who, text))| format!("{}\n{} --> {}\n{}: {}\n\n", i + 1, ts(t.start_ms), ts(t.end_ms), srt_escape(who), srt_escape(&text)))
@@ -230,7 +227,7 @@ fn engines(md: &MeetingData) -> Vec<String> {
 
 /// Markdown with YAML front matter (Obsidian shows it as properties; every value is quoted),
 /// then a transcript section with one paragraph per turn: `[hh:mm:ss] **speaker**: text`.
-pub fn markdown(md: &MeetingData, doc: &Doc, transcript_heading: &str) -> Result<String> {
+pub fn markdown(md: &MeetingData, doc: &Doc, transcript_heading: &str, view: &View) -> Result<String> {
     let v = &md.version;
     let mut out = vec!["---".to_string(), format!("title: {}", yaml(doc.title))];
     if let Some(d) = md.meeting.started_at.as_deref().or(v.created_at.as_deref()) {
@@ -247,7 +244,7 @@ pub fn markdown(md: &MeetingData, doc: &Doc, transcript_heading: &str) -> Result
         out.extend([format!("> {}", md_escape(n)), String::new()]);
     }
     out.extend([format!("## {}", md_escape(transcript_heading)), String::new()]);
-    for (t, who, text) in turn_lines(md, doc.unassigned)? {
+    for (t, who, text) in turn_lines(md, doc.unassigned, view)? {
         out.extend([format!("[{}] **{}**: {}", clock(t.start_ms), md_escape(who), md_escape(&text)), String::new()]);
     }
     Ok(out.join("\n"))
@@ -261,6 +258,7 @@ mod tests {
         serde_json::from_str(include_str!("../../../contract/fixtures/meeting01/meeting-data.draft.json")).unwrap()
     }
 
+    const P: View<'static> = View { overlay: &crate::overlay::EMPTY, vocabulary: None };
     const DOC: Doc = Doc { title: "회의 *retro*", unassigned: "화자 미지정", note: Some("승인 전 초안이에요.") };
 
     #[test]
@@ -273,7 +271,7 @@ mod tests {
     #[test]
     fn markdown_has_quoted_front_matter_engines_once_and_stamped_turns() {
         let md = fixture();
-        let out = markdown(&md, &DOC, "전사").unwrap();
+        let out = markdown(&md, &DOC, "전사", &P).unwrap();
         let (front, body) = out.strip_prefix("---\n").unwrap().split_once("\n---\n").unwrap();
         assert!(front.contains("title: \"회의 *retro*\"\n"));
         assert!(front.contains("duration: \"00:01:09\"\n"));
@@ -289,7 +287,7 @@ mod tests {
     fn approved_markdown_has_no_note_and_text_is_escaped() {
         let mut md = fixture();
         md.words[0].text = "[[link]] #tag".into();
-        let out = markdown(&md, &Doc { note: None, ..DOC }, "전사").unwrap();
+        let out = markdown(&md, &Doc { note: None, ..DOC }, "전사", &P).unwrap();
         assert!(!out.contains("\n> "));
         assert!(out.contains("**상대 1**: \\[\\[link\\]\\] \\#tag"));
     }
@@ -298,24 +296,81 @@ mod tests {
     fn text_variants_and_srt() {
         let mut md = fixture();
         md.turns[1].speaker = None;
-        let txt = timed_text(&md, &DOC).unwrap();
+        let txt = timed_text(&md, &DOC, &P).unwrap();
         assert!(txt.starts_with("회의 *retro*\n승인 전 초안이에요.\n\n[00:00:00] 상대 1: 지난주 인시던트"));
         assert!(txt.contains("\n[00:00:08] 화자 미지정: "));
-        let plain = turns_text(&md, "?", false, false).unwrap();
+        let plain = turns_text(&md, "?", false, false, &P).unwrap();
         assert!(plain.starts_with("지난주 인시던트"));
         assert_eq!(plain.lines().count(), md.turns.len());
-        assert!(turns_text(&md, "?", false, true).unwrap().starts_with("상대 1: 지난주"));
-        let srt = srt(&md, "화자 미지정").unwrap();
+        assert!(turns_text(&md, "?", false, true, &P).unwrap().starts_with("상대 1: 지난주"));
+        let srt = srt(&md, "화자 미지정", &P).unwrap();
         assert!(srt.starts_with("1\n00:00:00,700 --> 00:00:06,740\n상대 1: 지난주 인시던트"));
         assert!(srt.contains("\n\n2\n00:00:08,800 --> 00:00:16,740\n화자 미지정: "));
     }
 
     #[test]
+    fn every_reader_format_shows_names_merges_and_edits() {
+        use crate::overlay::{Overlay, SpeakerOverlay, TurnEdit};
+        let md = fixture();
+        let mut o = Overlay::default();
+        o.speakers.insert("s1".into(), SpeakerOverlay { name: Some("민수".into()), merged_into: None });
+        o.edits.insert("t0001".into(), TurnEdit { text: "고친 문장 <b>".into(), edited_at: "2026-11-11T00:00:00Z".into() });
+        let v = View::of(&o);
+        let txt = timed_text(&md, &DOC, &v).unwrap();
+        assert!(txt.contains("\n[00:00:00] 민수: 지난주 인시던트"), "{txt}");
+        assert!(txt.contains("\n[00:00:08] 나: 고친 문장 <b>\n"), "{txt}");
+        assert!(!txt.contains("상대 1"));
+        // the edit keeps the turn's own times; nothing else moves
+        let s = srt(&md, "?", &v).unwrap();
+        assert!(s.contains("\n2\n00:00:08,800 --> 00:00:16,740\n나: 고친 문장 <\u{200b}b>\n"), "{s}");
+        let vtt = webvtt_with(&md, "?", None, &v).unwrap();
+        assert!(vtt.contains("\nt0001\n00:00:08.800 --> 00:00:16.740\n<v 나>고친 문장 &lt;b&gt;\n"), "{vtt}");
+        assert!(vtt.contains("<v 민수>지난주"));
+        let mdown = markdown(&md, &DOC, "전사", &v).unwrap();
+        assert!(mdown.contains("[00:00:08] **나**: 고친 문장 \\<b\\>"), "{mdown}");
+        assert_eq!(turns_text(&md, "?", false, true, &v).unwrap().lines().nth(1), Some("나: 고친 문장 <b>"));
+        // "나" merged into 민수: every turn of both speakers carries the one name
+        o.speakers.insert("s0".into(), SpeakerOverlay { name: None, merged_into: Some("s1".into()) });
+        let all = turns_text(&md, "?", false, true, &View::of(&o)).unwrap();
+        assert!(all.lines().all(|l| l.starts_with("민수: ")), "{all}");
+        // the reference port stays the stored data
+        assert!(webvtt(&md).unwrap().contains("<v 상대 1>"));
+    }
+
+    #[test]
+    fn an_edit_wins_over_the_vocabulary_which_applies_to_every_other_turn() {
+        use crate::overlay::{Overlay, SpeakerOverlay, TurnEdit};
+        use crate::vocabulary::{Replacement, Vocabulary};
+        let md = fixture();
+        let mut o = Overlay::default();
+        o.speakers.insert("s1".into(), SpeakerOverlay { name: Some("민수".into()), merged_into: None });
+        o.edits.insert("t0001".into(), TurnEdit { text: "API 인시던트 고친 문장".into(), edited_at: "2026-11-11T00:00:00Z".into() });
+        let rep = |f: &str, r: &str| Replacement { find: f.into(), replace: r.into() };
+        let v = Vocabulary { hints: vec![], replacements: vec![rep("인시던트", "장애"), rep("API", "")] };
+        let view = View::shown(&o, &v);
+        let mdown = markdown(&md, &DOC, "전사", &view).unwrap();
+        // turn 0 (not edited): the name, and the replacements on its words (a deleted word leaves no gap)
+        assert!(mdown.contains("[00:00:00] **민수**: 지난주 장애 회고부터 할게요. 게이트웨이에서"), "{mdown}");
+        // turn 1 (edited): the edit as typed, never replaced
+        assert!(mdown.contains("[00:00:08] **나**: API 인시던트 고친 문장\n"), "{mdown}");
+        assert!(!mdown.contains("상대 1"));
+        let s = srt(&md, "?", &view).unwrap();
+        assert!(s.starts_with("1\n00:00:00,700 --> 00:00:06,740\n민수: 지난주 장애 회고부터 할게요. 게이트웨이에서"), "{s}");
+        assert!(s.contains("\n\n2\n00:00:08,800 --> 00:00:16,740\n나: API 인시던트 고친 문장\n"), "{s}");
+        // the turn text is the one the word-level view gives (`vocabulary::display_words`, as the app shows it)
+        let words = crate::vocabulary::display_words(&v, &md).unwrap();
+        let pos = positions(&md);
+        let t = &md.turns[0];
+        let joined = words[pos[t.first_word.as_str()]..=pos[t.last_word.as_str()]].iter().filter(|w| !w.is_empty()).cloned().collect::<Vec<_>>().join(" ");
+        assert_eq!(view.text(&md, &pos, t).unwrap(), joined);
+    }
+
+    #[test]
     fn webvtt_note_and_unassigned_voice() {
         let mut md = fixture();
-        assert_eq!(webvtt_with(&md, "?", None).unwrap(), webvtt(&md).unwrap());
+        assert_eq!(webvtt_with(&md, "?", None, &P).unwrap(), webvtt(&md).unwrap());
         md.turns[0].speaker = None;
-        let vtt = webvtt_with(&md, "화자 미지정", Some("초안 ---> 확인\n\n끝")).unwrap();
+        let vtt = webvtt_with(&md, "화자 미지정", Some("초안 ---> 확인\n\n끝"), &P).unwrap();
         assert!(vtt.starts_with("WEBVTT\n\nNOTE 초안 ---&gt; 확인  끝\n\nt0000\n00:00:00.700 --> 00:00:06.740\n<v 화자 미지정>지난주"));
     }
 
@@ -334,7 +389,7 @@ mod tests {
         let mut md = fixture();
         md.speakers.iter_mut().find(|s| s.id == "s1").unwrap().label = Some("A>B & <C>".into());
         md.words[0].text = "R&D a<b </i> 1 < 2 {\\an8} {x} &lt;\n\nx".into();
-        let srt = srt(&md, "?").unwrap();
+        let srt = srt(&md, "?", &P).unwrap();
         assert!(srt.contains("\nA>B & <\u{200b}C>: R&D a<\u{200b}b <\u{200b}/i> 1 < 2 {\u{200b}\\an8} {x} &lt;  x "), "{srt}");
         // one timing line per cue, and the blank line in the word did not end a cue
         assert_eq!(srt.lines().filter(|l| l.starts_with(|c: char| c.is_ascii_digit()) && l.contains(" --> ")).count(), md.turns.len());
@@ -345,7 +400,7 @@ mod tests {
     fn srt_clamps_times_past_its_two_hour_digits() {
         let mut md = fixture();
         (md.turns[0].start_ms, md.turns[0].end_ms) = (360_000_000, 360_001_000);
-        assert!(srt(&md, "?").unwrap().starts_with("1\n99:59:59,999 --> 99:59:59,999\n"));
+        assert!(srt(&md, "?", &P).unwrap().starts_with("1\n99:59:59,999 --> 99:59:59,999\n"));
     }
 
     #[test]
@@ -364,8 +419,8 @@ mod tests {
     fn a_broken_turn_is_an_error_in_every_format() {
         let mut md = fixture();
         md.turns[0].last_word = "missing".into();
-        assert!(markdown(&md, &DOC, "전사").is_err());
-        assert!(timed_text(&md, &DOC).is_err());
-        assert!(srt(&md, "?").is_err());
+        assert!(markdown(&md, &DOC, "전사", &P).is_err());
+        assert!(timed_text(&md, &DOC, &P).is_err());
+        assert!(srt(&md, "?", &P).is_err());
     }
 }

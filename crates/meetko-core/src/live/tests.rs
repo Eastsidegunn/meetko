@@ -5,7 +5,8 @@ use std::sync::atomic::AtomicUsize;
 
 use super::*;
 use crate::capture_run::CaptureOutcome;
-use crate::contract::meeting_data_validator;
+use crate::contract::{meeting_data_validator, Basis};
+use diar::MAX_LAG;
 use crate::manifest::Manifest;
 
 /// A fake engine in Python speaking the real protocol. It emits a partial every second of audio it
@@ -113,9 +114,17 @@ fn header(data_bytes: u32) -> Vec<u8> {
 
 /// Like the capture provider: the header is patched only now and then, the data grows continuously.
 fn write_growing(path: PathBuf, chunks: usize, pause: Duration, patch_every: usize) -> JoinHandle<()> {
+    write_growing_after(path, chunks, pause, patch_every, Arc::new(AtomicBool::new(true)))
+}
+
+/// `write_growing`, the audio only once `gate` is set (the header comes at once).
+fn write_growing_after(path: PathBuf, chunks: usize, pause: Duration, patch_every: usize, gate: Arc<AtomicBool>) -> JoinHandle<()> {
     std::thread::spawn(move || {
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(&header(0)).unwrap();
+        while !gate.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
         for i in 0..chunks {
             // a sloped signal, so a misplaced byte would show in the equality test
             let pcm: Vec<u8> = (0..1600).flat_map(|k| (((i * 1600 + k) % 20000) as i16).to_le_bytes()).collect();
@@ -234,6 +243,11 @@ fn run_session(mode: &str) -> (tempfile::TempDir, Store, String, LiveOutcome, Ve
 }
 
 fn run_session_with(mode: &str, tweak: impl FnOnce(&mut LiveConfig)) -> (tempfile::TempDir, Store, String, LiveOutcome, Vec<LiveUpdate>, bool) {
+    run_session_diar(mode, tweak, None)
+}
+
+/// `run_session_with`, and with `diar` (fake engine mode, max lag) a live speaker separation.
+fn run_session_diar(mode: &str, tweak: impl FnOnce(&mut LiveConfig), diar: Option<(&str, Duration)>) -> (tempfile::TempDir, Store, String, LiveOutcome, Vec<LiveUpdate>, bool) {
     let tmp = tempfile::tempdir().unwrap();
     let bin = fake_engine(tmp.path(), mode);
     let dir = tmp.path().join("captures").join("c1");
@@ -244,8 +258,21 @@ fn run_session_with(mode: &str, tweak: impl FnOnce(&mut LiveConfig)) -> (tempfil
     let on_update: OnUpdate = Arc::new(move |u| u2.lock().unwrap().push((u, w2.load(Ordering::SeqCst))));
     let mut c = cfg(bin);
     tweak(&mut c);
-    let session = LiveSession::start(c, &dir, on_update);
-    let writers = [write_growing(dir.join("mic.wav"), CHUNKS, Duration::from_millis(25), 50), write_growing(dir.join("loopback.wav"), CHUNKS, Duration::from_millis(25), 50)];
+    let (dcfg, max_lag) = match diar {
+        Some((m, lag)) => (Some(diar_cfg(tmp.path(), m)), lag),
+        None => (None, diar::MAX_LAG),
+    };
+    let session = LiveSession::start_lagging(c, dcfg, &dir, on_update, None, max_lag);
+    let gate = Arc::new(AtomicBool::new(false));
+    let writers = [write_growing_after(dir.join("mic.wav"), CHUNKS, Duration::from_millis(25), 50, gate.clone()), write_growing_after(dir.join("loopback.wav"), CHUNKS, Duration::from_millis(25), 50, gate.clone())];
+    // under load the engines take a while to start, and a stop during start-up gives up on purpose:
+    // the audio comes once every speaker separation has opened (or given up), as a long recording would
+    let end = Instant::now() + Duration::from_secs(60);
+    while !session.diar_settled() {
+        assert!(Instant::now() < end, "the speaker separations did not open within 60 s");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    gate.store(true, Ordering::SeqCst);
     for w in writers {
         w.join().unwrap(); // recording completes whatever the engine does
     }
@@ -458,7 +485,7 @@ fn the_model_directory_picks_the_engine() {
     let staged = stage_model(&nemotron, true, &|| false).unwrap();
     assert_eq!(std::fs::read(staged.path.join("model.q8_0.gguf")).unwrap(), b"weights");
     assert_eq!(staged.check.digest, c.digest);
-    assert_eq!(pins().iter().map(|p| (p.engine, p.role.as_str())).collect::<Vec<_>>(), [("nemotron-stream", ROLE_STREAM), ("nemotron-stream", ROLE_DIARIZATION), ("sherpa-stream", ROLE_STREAM)]);
+    assert_eq!(pins().iter().map(|p| (p.engine, p.role.as_str())).collect::<Vec<_>>(), [("nemotron-stream", ROLE_STREAM), ("nemotron-stream", ROLE_DIARIZATION), ("sherpa-stream", ROLE_STREAM), ("qwen3-asr", ROLE_BATCH), ("whisper-cpp", ROLE_WHISPER_VAD)]);
 }
 
 #[test]
@@ -711,4 +738,227 @@ fn channels_share_one_staged_model_and_its_failure() {
     let fresh = SharedModel::default();
     assert!(matches!(fresh.get(&c.model_dir, true, &|| true), Err(Error::Cancelled)));
     assert!(fresh.get(&c.model_dir, true, &|| false).is_ok());
+}
+
+// ---- live speaker separation (live/diar.rs)
+
+/// A diarization engine in Python speaking the live protocol: speaker "a" for the first two
+/// seconds of every four, "b" for the other two, reported once per second of audio as the real
+/// engine does (`keep` the unchanged turns). `mode`: "ok"; "slow" sleeps on every push so it falls
+/// behind; "die" exits after 20 pushes; "bad" sends an update that keeps turns it never sent;
+/// "no_open" refuses `diarize.open`.
+fn fake_diar(dir: &Path, mode: &str) -> PathBuf {
+    let src = r#"#!/usr/bin/env python3
+import base64, json, os, sys, time
+MODE = "MODE"
+fed = pushes = 0
+sent = []
+def out(o):
+    sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
+def turns():
+    ms = fed * 1000 // 16000
+    t = []
+    for a in range(0, ms, 2000):
+        t.append({"start_ms": a, "end_ms": min(a + 2000, ms), "speaker": "a" if (a // 2000) % 2 == 0 else "b"})
+    return [x for x in t if x["end_ms"] > x["start_ms"]]
+for line in sys.stdin:
+    m = json.loads(line)
+    meth, id = m.get("method"), m.get("id")
+    if meth == "initialize":
+        out({"jsonrpc": "2.0", "id": id, "result": {"contract": "0.1", "engine": {"id": "fake/diar", "version": "0"}, "role": "diarization", "model": {"id": "fake-diar-model"}}})
+    elif meth == "diarize.open":
+        if MODE == "no_open":
+            out({"jsonrpc": "2.0", "id": id, "error": {"code": -32010, "message": "no model"}})
+            continue
+        out({"jsonrpc": "2.0", "id": id, "result": {"params": {"mode": "streaming", "live": True}}})
+    elif meth == "diarize.push":
+        fed += len(base64.b64decode(m["params"]["pcm_s16le_b64"])) // 2
+        pushes += 1
+        if MODE == "slow":
+            time.sleep(0.2)
+        if MODE == "die" and pushes == 20:
+            os._exit(3)
+        if fed % 16000 == 0:
+            now = turns()
+            keep = 0
+            while keep < min(len(now), len(sent)) and now[keep] == sent[keep]:
+                keep += 1
+            if MODE == "bad" and fed == 32000:
+                keep = 99
+            out({"jsonrpc": "2.0", "method": "diarize.event", "params": {"keep": keep, "turns": now[keep:], "labelled_ms": fed * 1000 // 16000, "emitted_at_ms": fed * 1000 // 16000}})
+            sent = now
+    elif meth == "diarize.close":
+        out({"jsonrpc": "2.0", "id": id, "result": {"contract": "0.1", "kind": "diarization", "engine": {"id": "fake/diar", "version": "0"}, "model": {"id": "fake-diar-model"},
+             "params": {"mode": "streaming", "live": True, "fed_ms": fed * 1000 // 16000}, "network": False, "turns": turns()}})
+    elif meth == "shutdown":
+        out({"jsonrpc": "2.0", "id": id, "result": {}})
+        break
+"#;
+    let p = dir.join(format!("fake-diar-{mode}.py"));
+    std::fs::write(&p, src.replace("MODE", mode)).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    p
+}
+
+/// The fake engine with an (unpinned) diarization model directory of dummy files.
+fn diar_cfg(dir: &Path, mode: &str) -> DiarConfig {
+    let model_dir = dir.join("diar-model");
+    std::fs::create_dir_all(&model_dir).unwrap();
+    std::fs::write(model_dir.join("Nemotron-3-Diarization.q8_0.gguf"), "weights").unwrap();
+    DiarConfig { engine_bin: fake_diar(dir, mode), model_dir, unpinned: true, timeout: Duration::from_secs(5), min_speaker_ms: 0 }
+}
+
+fn speakers_of(updates: &[LiveUpdate], channel: u32) -> BTreeMap<i64, Option<u32>> {
+    let mut m = BTreeMap::new();
+    for u in updates {
+        if let LiveUpdate::Speakers { channel: c, labels } = u {
+            if *c == channel {
+                m.extend(labels.iter().map(|l| (l.segment, l.speaker)));
+            }
+        }
+    }
+    m
+}
+
+#[test]
+fn live_speakers_label_the_captions_and_become_the_live_versions_speakers() {
+    let (_tmp, store, id, outcome, updates, _) = run_session_diar("ok", |_| {}, Some(("ok", MAX_LAG)));
+    assert!(updates.iter().any(|u| matches!(u, LiveUpdate::Ready { channel: 0 })), "the caption engine said it listens");
+    for ch in [0, 1] {
+        let d = &outcome.diar[&ch];
+        assert!(d.complete && d.error.is_none() && d.result.is_some(), "{:?}", d.error);
+        assert_eq!(d.fed_bytes, CHUNKS as u64 * 3200);
+        let labels = speakers_of(&updates, ch);
+        assert_eq!(labels.get(&0), Some(&Some(1)), "the first segment (0-2 s) is the first speaker: {labels:?}");
+        assert_eq!(labels.get(&2), Some(&Some(2)), "the last (6-8 s) the second");
+    }
+    // captions are exactly as without it
+    assert!(outcome.channels.values().all(|c| c.complete && c.error.is_none()));
+    let md = store_live(&store, &id, &outcome, CHUNK_MS).unwrap().expect("a live version");
+    assert!(schema_errors(meeting_data_validator(), &store.version_raw(&md.version.id).unwrap()).is_empty());
+    let labels: Vec<_> = md.speakers.iter().map(|s| (s.channel, s.label.clone().unwrap(), s.basis)).collect();
+    assert_eq!(labels, [(0, "나 1".into(), Basis::Diarization), (0, "나 2".into(), Basis::Diarization), (1, "상대 1".into(), Basis::Diarization), (1, "상대 2".into(), Basis::Diarization)]);
+    let diar: Vec<&Value> = md.version.producers.iter().filter(|p| p["role"] == "diarization").collect();
+    assert_eq!(diar.len(), 2);
+    let files = store.channel_files(&id).unwrap();
+    for (p, f) in diar.iter().zip(&files) {
+        assert_eq!((p["engine"]["id"].as_str(), p["network"].as_bool(), p["channels"][0].as_u64()), (Some("fake/diar"), Some(false), Some(u64::from(f.index))));
+        assert_eq!((p["params"]["mode"].as_str(), p["params"]["live"].as_bool(), p["params"]["model_pinned"].as_bool()), (Some("streaming"), Some(true), Some(false)));
+        assert!(p["model"]["sha256"].as_str().is_some_and(|s| s.len() == 64), "the staged model is recorded: {p}");
+    }
+    assert!(md.words.iter().all(|w| w.speaker.is_some()), "every word has its speaker");
+    assert_eq!(md.speaker_spans.len(), 8, "2 s turns over 8 s on two channels");
+
+    // the first draft keeps these speakers without running a diarization engine again
+    struct MustNotRun;
+    impl crate::diarize::DiarEngine for MustNotRun {
+        fn diarize(&self, _: &crate::diarize::DiarRequest, _: &AtomicBool) -> Result<Value> {
+            panic!("the live session's speakers were separated again");
+        }
+    }
+    let progress = AtomicUsize::new(0);
+    let d = crate::pipeline::draft_from_live(&store, &md.version.id, Some(&MustNotRun), &|_| { progress.fetch_add(1, Ordering::SeqCst); }, &AtomicBool::new(false)).unwrap();
+    assert!(d.warnings.is_empty());
+    assert_eq!(progress.load(Ordering::SeqCst), 0, "nothing to separate, no progress");
+    assert_eq!((d.data.speakers.clone(), d.data.speaker_spans.clone()), (md.speakers.clone(), md.speaker_spans.clone()));
+    assert_eq!(d.data.words.iter().map(|w| &w.speaker).collect::<Vec<_>>(), md.words.iter().map(|w| &w.speaker).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_draft_separates_only_the_channels_the_live_session_did_not() {
+    // channel 1's live separation failed: the live version has speakers on channel 0 only
+    let (_tmp, store, id, mut outcome, _, _) = run_session_diar("ok", |_| {}, Some(("ok", MAX_LAG)));
+    outcome.diar.get_mut(&1).unwrap().complete = false;
+    let md = store_live(&store, &id, &outcome, CHUNK_MS).unwrap().unwrap();
+    assert_eq!(md.version.producers.iter().filter(|p| p["role"] == "diarization").count(), 1);
+    struct Calls(AtomicUsize);
+    impl crate::diarize::DiarEngine for Calls {
+        fn diarize(&self, req: &crate::diarize::DiarRequest, _: &AtomicBool) -> Result<Value> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(req.channel, 1, "only the channel without live speakers");
+            Ok(json!({"contract": "0.1", "kind": "diarization", "engine": {"id": "batch-diar", "version": "1"}, "network": false, "audio_sha256": req.audio_sha256,
+                "turns": [{"start_ms": 0, "end_ms": 4000, "speaker": "x"}, {"start_ms": 4000, "end_ms": 8000, "speaker": "y"}]}))
+        }
+        fn min_speaker_ms(&self) -> i64 {
+            0
+        }
+    }
+    let calls = Calls(AtomicUsize::new(0));
+    let d = crate::pipeline::draft_from_live(&store, &md.version.id, Some(&calls), &|_| {}, &AtomicBool::new(false)).unwrap().data;
+    assert_eq!(calls.0.load(Ordering::SeqCst), 1);
+    let engines: Vec<_> = d.version.producers.iter().filter(|p| p["role"] == "diarization").map(|p| (p["channels"][0].as_u64().unwrap(), p["engine"]["id"].as_str().unwrap().to_string())).collect();
+    assert_eq!(engines, [(0, "fake/diar".to_string()), (1, "batch-diar".to_string())]);
+    let ch0 = |m: &MeetingData| m.speakers.iter().filter(|s| s.channel == 0).map(|s| s.label.clone()).collect::<Vec<_>>();
+    assert_eq!(ch0(&d), ch0(&md), "channel 0 keeps the live speakers");
+    assert_eq!(d.speaker_spans.iter().filter(|s| s.channel == 0).count(), 4);
+    assert!(schema_errors(meeting_data_validator(), &d.to_value()).is_empty());
+}
+
+#[test]
+fn a_separation_that_falls_behind_is_given_up_and_the_captions_do_not_wait() {
+    let (_tmp, store, id, outcome, updates, _) = run_session_diar("ok", |_| {}, Some(("slow", Duration::from_millis(1500))));
+    for ch in [0, 1] {
+        let d = &outcome.diar[&ch];
+        assert!(!d.complete && d.result.is_none(), "{d:?}");
+        assert!(d.error.as_deref().is_some_and(|e| e.contains("behind")), "{:?}", d.error);
+        // labels it had sent are withdrawn
+        assert!(speakers_of(&updates, ch).values().all(Option::is_none));
+    }
+    assert!(outcome.channels.values().all(|c| c.complete && c.error.is_none() && c.events.len() == 3), "captions are untouched");
+    assert!(!updates.iter().any(|u| matches!(u, LiveUpdate::Error { .. })), "a speaker separation is not a caption failure");
+    let md = store_live(&store, &id, &outcome, CHUNK_MS).unwrap().unwrap();
+    assert!(md.version.producers.iter().all(|p| p["role"] != "diarization"), "the draft's pass separates the speakers");
+    assert_eq!(md.speakers.len(), 2);
+}
+
+#[test]
+fn a_separation_engine_that_dies_or_breaks_the_protocol_costs_nothing_else() {
+    for mode in ["die", "bad", "no_open"] {
+        let (_tmp, store, id, outcome, updates, _) = run_session_diar("ok", |_| {}, Some((mode, MAX_LAG)));
+        for d in outcome.diar.values() {
+            assert!(!d.complete && d.result.is_none() && d.error.is_some(), "{mode}: {d:?}");
+        }
+        assert!(outcome.channels.values().all(|c| c.complete && c.error.is_none()), "{mode}");
+        assert!(!updates.iter().any(|u| matches!(u, LiveUpdate::Error { .. })), "{mode}");
+        let md = store_live(&store, &id, &outcome, CHUNK_MS).unwrap().unwrap();
+        assert!(md.version.producers.iter().all(|p| p["role"] != "diarization"), "{mode}");
+    }
+}
+
+#[test]
+fn a_result_for_other_audio_than_the_stored_file_is_not_stored() {
+    let (_tmp, store, id, outcome, _, _) = run_session_diar("ok", |_| {}, Some(("ok", MAX_LAG)));
+    type Tweak = (&'static str, fn(&mut DiarLive));
+    let tweaks: [Tweak; 5] = [
+        ("other PCM of the same length", |d| d.fed_sha256 = Some("0".repeat(64))),
+        ("one sample less", |d| d.fed_bytes -= 2),
+        ("the engine counted other audio", |d| d.result.as_mut().unwrap()["params"]["fed_ms"] = json!(7999)),
+        ("turns after the recording", |d| d.result.as_mut().unwrap()["turns"] = json!([{ "start_ms": 9000, "end_ms": 9500, "speaker": "a" }])),
+        ("not drained", |d| d.complete = false),
+    ];
+    for (why, tweak) in tweaks {
+        let mut o = LiveOutcome { channels: outcome.channels.clone(), diar: outcome.diar.clone() };
+        tweak(o.diar.get_mut(&0).unwrap());
+        let md = store_live(&store, &id, &o, CHUNK_MS).unwrap().unwrap();
+        let chans: Vec<u64> = md.version.producers.iter().filter(|p| p["role"] == "diarization").map(|p| p["channels"][0].as_u64().unwrap()).collect();
+        assert_eq!(chans, [1], "{why}: only the untouched channel keeps its live speakers");
+        assert_eq!(md.words.len(), 16, "{why}: the captions are stored as without it");
+    }
+    // a stored file that changed after import is not the audio either
+    let f = &store.channel_files(&id).unwrap()[1];
+    let mut b = std::fs::read(&f.path).unwrap();
+    let last = b.len() - 1;
+    b[last] ^= 1;
+    std::fs::write(&f.path, b).unwrap();
+    let md = store_live(&store, &id, &outcome, CHUNK_MS).unwrap().unwrap();
+    let chans: Vec<u64> = md.version.producers.iter().filter(|p| p["role"] == "diarization").map(|p| p["channels"][0].as_u64().unwrap()).collect();
+    assert_eq!(chans, [0]);
+}
+
+#[test]
+fn caption_segments_span_their_units_or_the_audio_so_far() {
+    let ev = |units: Value| json!({ "start_ms": 1000, "emitted_at_ms": 2500, "units": units });
+    assert_eq!(segment_span(&ev(json!([]))), (1000, 2500), "a partial without units runs to the audio fed");
+    assert_eq!(segment_span(&ev(json!([{ "text": "a", "start_ms": 1100 }, { "text": " b", "start_ms": 1800, "end_ms": 2100 }]))), (1000, 2100));
+    assert_eq!(segment_span(&ev(json!([{ "text": "a", "start_ms": 1100 }, { "text": " b", "start_ms": 1800 }]))), (1000, 1800));
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-auto-retranscribe-set"
+description = "Enables the auto_retranscribe_set command without any pre-configured scope."
+commands.allow = ["auto_retranscribe_set"]
+
+[[permission]]
+identifier = "deny-auto-retranscribe-set"
+description = "Denies the auto_retranscribe_set command without any pre-configured scope."
+commands.deny = ["auto_retranscribe_set"]

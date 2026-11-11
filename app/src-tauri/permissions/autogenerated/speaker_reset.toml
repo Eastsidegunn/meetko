@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-speaker-reset"
+description = "Enables the speaker_reset command without any pre-configured scope."
+commands.allow = ["speaker_reset"]
+
+[[permission]]
+identifier = "deny-speaker-reset"
+description = "Denies the speaker_reset command without any pre-configured scope."
+commands.deny = ["speaker_reset"]

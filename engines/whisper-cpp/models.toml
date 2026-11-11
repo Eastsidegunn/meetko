@@ -1,0 +1,19 @@
+# Model data meetko hands to whisper.cpp's whisper-cli (다시 받아쓰기). meetko does not build or ship
+# whisper-cli (the user installs it, e.g. `brew install whisper-cpp`), so this directory holds only
+# these pins; the whisper model itself is the user's file, recorded by its sha256 (crates/meetko-core/src/whisper.rs).
+# Same rules as ../nemotron-stream/models.toml: pinned per file, the key is the file name inside the
+# model directory, and the core copies the file into a private directory while hashing it before
+# whisper-cli sees it.
+#
+# The voice activity detection model for `whisper-cli --vad --vad-model` (whisper.cpp 1.7.6 or newer;
+# role "whisper.vad"; opt-in for evaluation via MEETKO_WHISPER_VAD_MODEL, see whisper.rs). Silero VAD v6.2.0
+# (snakers4/silero-vad, MIT) as converted to ggml by the whisper.cpp project: ggml-silero-v6.2.0.bin
+# in ggml-org/whisper-vad at revision 9ffd54a1e1ee413ddf265af9913beaf518d1639b (repository license
+# MIT), 885,098 bytes. The file keeps its Hugging Face name.
+
+[[model]]
+id = "silero-vad-v6.2.0-ggml"
+role = "whisper.vad"
+
+[model.files]
+"ggml-silero-v6.2.0.bin" = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"

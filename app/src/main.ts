@@ -20,7 +20,7 @@ document.body.append(h("div", { id: "live", class: "sr", role: "status", "aria-l
 
 /** If the backend cannot even report its status, treat everything as not set up and say so. */
 const unknown = { ok: false, path: null, code: "error", detail: "상태를 확인하지 못했습니다" };
-let status: Status = { dev_build: false, model: unknown, whisper_cli: unknown, capture: unknown, live: unknown };
+let status: Status = { dev_build: false, model: unknown, whisper_cli: unknown, capture: unknown, live: unknown, batch_choice: "auto", batch_engine: "whisper", batch_fallback: false, batch: unknown, auto_retranscribe: true };
 
 const NAV: [string, string, string][] = [["meetings", "회의", "list"], ["record", "녹음", "record"], ["plugins", "플러그인", "puzzle"], ["settings", "설정", "gear"]];
 let cleanup: () => void = () => {};

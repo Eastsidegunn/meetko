@@ -7,11 +7,15 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn silent_wav(path: &Path, secs: u32) {
+/// Silence with half a second of a swelling tone in it: enough sound, changing in level, that the core
+/// sends the channel to whisper (a channel that is dead or steady is skipped without running it).
+fn sound_wav(path: &Path, secs: u32) {
     let spec = hound::WavSpec { channels: 1, sample_rate: 16000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
     let mut w = hound::WavWriter::create(path, spec).unwrap();
-    for _ in 0..16000 * secs {
-        w.write_sample(0i16).unwrap();
+    for i in 0..16000 * secs {
+        let swell = 300.0 + (i as f32 - 8000.0) * 0.4; // 300 -> 3500 over the half second
+        let tone = (8000..16000).contains(&i).then(|| ((i as f32 * 2.0 * std::f32::consts::PI * 440.0 / 16000.0).sin() * swell) as i16);
+        w.write_sample(tone.unwrap_or(0)).unwrap();
     }
     w.finalize().unwrap();
 }
@@ -125,8 +129,8 @@ fn import_transcribe_plugin_approve_stale_export() {
     let tmp = tempfile::tempdir().unwrap();
     let t = tmp.path();
     let (mic, lb) = (t.join("mic.wav"), t.join("loopback.wav"));
-    silent_wav(&mic, 5);
-    silent_wav(&lb, 5);
+    sound_wav(&mic, 5);
+    sound_wav(&lb, 5);
     let model = t.join("ggml-test.bin");
     std::fs::write(&model, b"not a model").unwrap();
     let env = Env { data: t.join("data"), whisper: fake_whisper(t), model };

@@ -4,6 +4,9 @@
 //! `approved` version, changing only `version.*`. A plugin result stays bound to the
 //! version it read, and is stale when the meeting's head (the latest approved version,
 //! else the latest draft) has different content from that version.
+//!
+//! What a person changes on a transcript (speaker names, merges, edited text) is kept beside the
+//! versions as overlays (`store::overlay`), never in them.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -105,6 +108,10 @@ const MIGRATIONS: &[&str] = &[
     ",
     // 4: full-text search over each meeting's head version (store/search.rs; backfilled in `open`)
     search::MIGRATION,
+    // 5: provenance records of results handed in by AI agents over MCP (store/agent.rs)
+    agent::MIGRATION,
+    // 6: speaker names, merges and edited turn text, overlays on a transcript (store/overlay.rs)
+    overlay::MIGRATION,
 ];
 
 pub(crate) fn source_conflict(id: &str, before: Option<&crate::plugin_source::PluginSource>, new: Option<&crate::plugin_source::PluginSource>) -> Error {
@@ -188,8 +195,12 @@ pub struct ResultRow {
     pub declared_network: bool,
     pub declared_audio: String,
     /// the OS isolation the run had: `macos-sbpl`, `none` (not available), `off` (opted out),
-    /// `unrecorded` (stored by `add_result` without a host run)
+    /// `unrecorded` (stored by `add_result` without a host run), `mcp` (handed in by an external
+    /// agent, see `store::agent`)
     pub sandbox: String,
+    /// for an agent result: the provenance record it was stored with (client, agent, network);
+    /// `None` for plugin results
+    pub agent: Option<Value>,
 }
 
 /// One channel file to import.
@@ -886,6 +897,9 @@ impl Store {
     }
 
     pub fn plugin(&self, id: &str) -> Result<(PluginRow, Manifest)> {
+        if agent::is_agent_id(id) {
+            return Err(Error::NotFound(format!("plugin {id}: this id holds results from an AI agent (MCP), it is not a plugin")));
+        }
         let (row, json): (PluginRow, String) = self
             .conn
             .query_row(
@@ -900,7 +914,7 @@ impl Store {
     }
 
     pub fn list_plugins(&self) -> Result<Vec<PluginRow>> {
-        let mut st = self.conn.prepare("SELECT id, version, dir, network, audio, manifest_sha256, code_sha256 FROM plugins ORDER BY id")?;
+        let mut st = self.conn.prepare("SELECT id, version, dir, network, audio, manifest_sha256, code_sha256 FROM plugins WHERE dir <> '' AND lower(substr(id, 1, 4)) <> 'mcp:' ORDER BY id")?;
         let rows = st.query_map([], Self::plugin_row)?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
@@ -953,20 +967,22 @@ impl Store {
                COALESCE(
                  (SELECT h.content_sha256 FROM versions h WHERE h.meeting_id = r.meeting_id AND h.kind = 'approved' ORDER BY h.seq DESC LIMIT 1),
                  (SELECT h.content_sha256 FROM versions h WHERE h.meeting_id = r.meeting_id AND h.kind = 'draft' ORDER BY h.seq DESC LIMIT 1),
-                 v.content_sha256) <> v.content_sha256
-        FROM plugin_results r JOIN versions v ON v.id = r.version_id";
+                 v.content_sha256) <> v.content_sha256,
+               ap.json
+        FROM plugin_results r JOIN versions v ON v.id = r.version_id
+        LEFT JOIN agent_provenance ap ON r.sandbox = 'mcp' AND ap.sha256 = r.plugin_manifest_sha256";
 
     #[allow(clippy::type_complexity)]
     fn results(&self, where_: &str, arg: &str) -> Result<Vec<ResultRow>> {
         let sql = format!("{} WHERE {where_} ORDER BY r.id", Self::RESULT_SELECT);
         let mut st = self.conn.prepare(&sql)?;
-        let rows: Vec<(i64, String, String, String, String, String, String, String, bool, String, String, bool)> = st
+        let rows: Vec<(i64, String, String, String, String, String, String, String, bool, String, String, bool, Option<String>)> = st
             .query_map([arg], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?))
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?, r.get(12)?))
             })?
             .collect::<std::result::Result<_, _>>()?;
         rows.into_iter()
-            .map(|(id, plugin_id, plugin_version, version_id, created_at, out, code, manifest, net, audio, sandbox, stale)| {
+            .map(|(id, plugin_id, plugin_version, version_id, created_at, out, code, manifest, net, audio, sandbox, stale, agent)| {
                 Ok(ResultRow {
                     id,
                     plugin_id,
@@ -980,6 +996,7 @@ impl Store {
                     declared_network: net,
                     declared_audio: audio,
                     sandbox,
+                    agent: agent.and_then(|a| serde_json::from_str(&a).ok()),
                 })
             })
             .collect()
@@ -1001,6 +1018,8 @@ impl Store {
     }
 }
 
+pub mod agent;
+pub mod overlay;
 pub mod search;
 mod sources;
 #[cfg(test)]

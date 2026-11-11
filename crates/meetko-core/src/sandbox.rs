@@ -149,6 +149,113 @@ fn spellings(p: &Path) -> Vec<PathBuf> {
     }
 }
 
+/// What a native engine (`batch.rs`) may touch on macOS.
+#[derive(Debug, Clone)]
+pub struct EngineSandbox {
+    /// the engine's binary: the one program it may run
+    pub exe: PathBuf,
+    /// its private HOME and working directory: the one place it may write (with the Metal caches)
+    pub home: PathBuf,
+    /// trees it may not read (the user's home, the meetko data dir) ...
+    pub deny_read: Vec<PathBuf>,
+    /// ... except these (its own binary and libraries, the staged model, the temp folder that holds the
+    /// staged model and the wav of each request)
+    pub allow_read: Vec<PathBuf>,
+    /// trees it may write besides `home`: the Metal shader caches (`metal_cache_dirs`)
+    pub allow_write: Vec<PathBuf>,
+}
+
+/// Where Metal keeps its compiled shaders for this user (`<DARWIN_USER_CACHE_DIR>/com.apple.metal` and
+/// `com.apple.metalfe`, under /var/folders, not the home). Without write access ggml-metal compiles every
+/// kernel again at each start (measured: about 75 s instead of under 1 s); nothing else is written there.
+#[cfg(target_os = "macos")]
+pub fn metal_cache_dirs() -> Vec<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    let mut buf = [0u8; 1024];
+    // SAFETY: buf is valid for buf.len() bytes; confstr writes a NUL-terminated string at most that long
+    let n = unsafe { libc::confstr(libc::_CS_DARWIN_USER_CACHE_DIR, buf.as_mut_ptr().cast(), buf.len()) };
+    if n == 0 || n > buf.len() {
+        return vec![];
+    }
+    let c = Path::new(std::ffi::OsStr::from_bytes(&buf[..n - 1]));
+    if c.components().count() < 5 {
+        return vec![]; // never something as broad as /private/var/folders
+    }
+    vec![c.join("com.apple.metal"), c.join("com.apple.metalfe")]
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn metal_cache_dirs() -> Vec<PathBuf> {
+    vec![]
+}
+
+/// The profile a native engine runs under on macOS. It is allow-by-default, unlike a plugin's: Metal
+/// needs mach services, IOKit and system files that a deny-by-default profile would have to list one by
+/// one (and that change between macOS versions). What it takes away (later rules win):
+///
+/// - all network access, so `network: false` is enforced, not only declared;
+/// - fork, and running any program but the engine itself;
+/// - AppleEvents, and LaunchServices (`launchservicesd`, `lsd.*`), so it cannot open a URL or start an
+///   app that would run outside the sandbox;
+/// - writing anywhere but its HOME, the Metal caches, `/dev/null` and `/dev/tty`;
+/// - reading the user's home and the data dir, except its own files, the staged model and the temp
+///   folder.
+///
+/// What stays open: reading the rest of the file system outside the denied trees (system files Metal and
+/// dyld need, other users' readable files), and mach services other than LaunchServices (Metal's
+/// compiler and GPU services among them). Paths are given in both spellings (`/var` and `/private/var`).
+pub fn engine_profile(s: &EngineSandbox) -> Result<String> {
+    let any = |op: &str, kind: &str, paths: &[PathBuf]| -> Result<String> {
+        let mut parts = String::new();
+        for p in paths.iter().flat_map(|p| spellings(p)) {
+            parts.push_str(&format!(" ({kind} {})", lit(&p)?));
+        }
+        Ok(if parts.is_empty() { String::new() } else { format!("({op}{parts})\n") })
+    };
+    let mut out = String::from("(version 1)\n(allow default)\n(deny network*)\n(deny process-fork)\n(deny process-exec)\n");
+    out.push_str(&any("allow process-exec", "literal", std::slice::from_ref(&s.exe))?);
+    out.push_str("(deny appleevent-send)\n");
+    out.push_str(concat!(
+        "(deny mach-lookup (global-name \"com.apple.coreservices.launchservicesd\") (global-name \"com.apple.lsd.open\")",
+        " (global-name \"com.apple.lsd.mapdb\") (global-name \"com.apple.lsd.modifydb\"))\n"
+    ));
+    out.push_str("(deny file-write*)\n");
+    let mut write = vec![s.home.clone()];
+    write.extend(s.allow_write.iter().cloned());
+    out.push_str(&any("allow file-write*", "subpath", &write)?);
+    out.push_str("(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))\n");
+    out.push_str(&any("deny file-read*", "subpath", &s.deny_read)?);
+    let mut read = vec![s.home.clone()];
+    read.extend(s.allow_read.iter().cloned());
+    out.push_str(&any("allow file-read*", "subpath", &read)?);
+    // the binary itself, wherever it lies
+    out.push_str(&any("allow file-read*", "literal", std::slice::from_ref(&s.exe))?);
+    Ok(out)
+}
+
+/// Whether `sandbox-exec` applies an engine profile on this machine (checked once per process).
+pub fn engine_preflight() -> Result<()> {
+    use std::sync::OnceLock;
+    static RESULT: OnceLock<std::result::Result<(), String>> = OnceLock::new();
+    RESULT
+        .get_or_init(|| {
+            if !cfg!(target_os = "macos") || !Path::new(SANDBOX_EXEC).is_file() {
+                return Err(format!("{SANDBOX_EXEC} is not available"));
+            }
+            let home = tempfile::tempdir().map_err(|e| e.to_string())?;
+            let probe = engine_profile(&EngineSandbox { exe: "/usr/bin/true".into(), home: home.path().into(), deny_read: vec![], allow_read: vec![], allow_write: vec![] })
+                .map_err(|e| e.to_string())?;
+            let out = std::process::Command::new(SANDBOX_EXEC).args(["-p", &probe, "/usr/bin/true"]).output().map_err(|e| format!("cannot run {SANDBOX_EXEC}: {e}"))?;
+            if out.status.success() {
+                Ok(())
+            } else {
+                Err(format!("sandbox-exec cannot apply the engine profile: {}", String::from_utf8_lossy(&out.stderr).trim()))
+            }
+        })
+        .clone()
+        .map_err(Error::EngineSandbox)
+}
+
 impl SandboxPolicy {
     /// The SBPL profile. Order matters (later rules win): the deny-default baseline and its fixed
     /// allowances, then the extra deny-read layer, then the re-allows for the plugin's own trees.
@@ -500,6 +607,73 @@ pub fn preflight() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn engine(exe: &str, home: &Path) -> EngineSandbox {
+        EngineSandbox { exe: exe.into(), home: home.into(), deny_read: vec![], allow_read: vec![], allow_write: vec![] }
+    }
+
+    #[test]
+    fn an_engine_profile_names_what_it_takes_away() {
+        let mut e = engine("/opt/a \"b\"/engine", Path::new("/nonexistent/home"));
+        e.deny_read = vec!["/nonexistent/user".into()];
+        e.allow_read = vec!["/nonexistent/user/model".into()];
+        let p = engine_profile(&e).unwrap();
+        for rule in ["(deny network*)", "(deny process-fork)", "(deny process-exec)", "(deny appleevent-send)", "com.apple.coreservices.launchservicesd", "(deny file-write*)"] {
+            assert!(p.contains(rule), "{rule}: {p}");
+        }
+        assert!(p.contains(r#"(allow process-exec (literal "/opt/a \"b\"/engine"))"#), "{p}");
+        // later rules win: the re-allows come after the denies
+        assert!(p.find("(deny file-read* (subpath \"/nonexistent/user\"))").unwrap() < p.find("(subpath \"/nonexistent/user/model\")").unwrap());
+        assert!(p.find("(deny file-write*)").unwrap() < p.find("(allow file-write* (subpath \"/nonexistent/home\"))").unwrap());
+        assert!(engine_profile(&engine("/a\nb", Path::new("/h"))).is_err());
+    }
+
+    /// Run `exe args` under a profile made for `exe`; whether it succeeded, and its stdout.
+    #[cfg(target_os = "macos")]
+    fn under(e: &EngineSandbox, args: &[&str]) -> (bool, String) {
+        let profile = engine_profile(e).unwrap();
+        let out = std::process::Command::new(SANDBOX_EXEC).arg("-p").arg(&profile).arg(&e.exe).args(args).output().unwrap();
+        (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_engine_runs_only_itself_and_reads_and_writes_only_what_it_may() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (home, user, outside) = (tmp.path().join("home"), tmp.path().join("user"), tmp.path().join("outside"));
+        for d in [&home, &user.join("model"), &outside] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(user.join("secret.txt"), "secret").unwrap();
+        std::fs::write(user.join("model/weights"), "weights").unwrap();
+        let with = |exe: &str| EngineSandbox { deny_read: vec![user.clone()], allow_read: vec![user.join("model")], ..engine(exe, &home) };
+        // the engine itself runs; nothing else does
+        assert!(under(&with("/usr/bin/true"), &[]).0);
+        let echo = EngineSandbox { exe: "/usr/bin/true".into(), ..with("/usr/bin/true") };
+        let profile = engine_profile(&echo).unwrap();
+        assert!(!std::process::Command::new(SANDBOX_EXEC).args(["-p", &profile, "/bin/echo"]).output().unwrap().status.success());
+        // reads: not the denied tree, except what is allowed in it
+        let cat = with("/bin/cat");
+        assert!(!under(&cat, &[user.join("secret.txt").to_str().unwrap()]).0, "the user's files");
+        assert_eq!(under(&cat, &[user.join("model/weights").to_str().unwrap()]), (true, "weights".into()));
+        // writes: only its home
+        let touch = with("/usr/bin/touch");
+        assert!(under(&touch, &[home.join("ok").to_str().unwrap()]).0);
+        assert!(!under(&touch, &[outside.join("no").to_str().unwrap()]).0);
+        assert!(!outside.join("no").exists());
+        // LaunchServices: no answer (unsandboxed, `lsappinfo front` names the front app's ASN)
+        let (_, front) = under(&with("/usr/bin/lsappinfo"), &["front"]);
+        assert!(!front.contains("ASN:"), "{front}");
+    }
+
+    #[test]
+    fn the_engine_preflight_answers_the_same_every_time() {
+        let a = engine_preflight().is_ok();
+        assert_eq!(engine_preflight().is_ok(), a);
+        if cfg!(target_os = "macos") && Path::new(SANDBOX_EXEC).is_file() {
+            assert!(a, "{:?}", engine_preflight());
+        }
+    }
 
     #[test]
     fn profile_is_deny_default_orders_denies_before_reallows_and_escapes() {

@@ -1,0 +1,21 @@
+# Batch ASR engine (role asr.batch), experimental. Run by the core for 다시 받아쓰기 when the user chose
+# Qwen3-ASR in the settings; one process per transcription, serving every channel. Protocol: README in
+# this directory.
+[package]
+id = "meetko/qwen3-asr"
+version = "0.1.0"
+kind = "engine"
+contract = "0.1"
+license = "AGPL-3.0-or-later"
+description = "Qwen3-ASR-1.7B 다시 받아쓰기 (실험 기능), 단어 시각은 Qwen3-ForcedAligner"
+
+[run]
+command = "target/release/meetko-qwen3-asr"
+protocol = "stdio-jsonrpc"
+
+[role]
+provides = "asr.batch"
+word_timestamps = "aligned"
+
+[permissions]
+network = false

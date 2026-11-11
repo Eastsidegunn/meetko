@@ -19,10 +19,14 @@
 //! `index_pending` fills them one meeting per transaction, a little at every open and before a
 //! search, so an open never holds the write lock for long.
 //!
+//! A turn the user edited (`store::overlay`) is indexed as its edited text; editing or resetting
+//! a turn rebuilds the meeting's row in the same transaction.
+//!
 //! Text: whitespace is collapsed and hidden characters (`text::is_hidden_char`, NUL included) are
 //! dropped, in words and in queries alike. There is no Unicode normalization (no NFC crate is
 //! vendored): a decomposed "é" in a transcript is not found by a composed one, and the reverse.
 
+use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
 use rusqlite::{params, OptionalExtension};
@@ -32,6 +36,8 @@ use unicode_general_category::{get_general_category, GeneralCategory as Gc};
 use super::Store;
 use crate::contract::MeetingData;
 use crate::error::{Error, Result};
+use crate::overlay::TurnEdit;
+use crate::vocabulary::{self, Vocabulary};
 use crate::text::is_hidden_char;
 
 /// Longer input is cut to this many characters.
@@ -71,7 +77,7 @@ const UNREADABLE: &str = "SELECT meeting_id, version_id FROM search_docs WHERE u
 /// Orders a meeting's versions so that the head comes first (approved > draft > live, newest).
 /// Unlike the staleness head (approved > draft, `RESULT_SELECT`), live counts here: plugins never
 /// read captions, but a meeting that only has captions should still be found, as the app opens it.
-const HEAD_ORDER: &str = "ORDER BY CASE kind WHEN 'approved' THEN 2 WHEN 'draft' THEN 1 ELSE 0 END DESC, seq DESC LIMIT 1";
+pub(super) const HEAD_ORDER: &str = "ORDER BY CASE kind WHEN 'approved' THEN 2 WHEN 'draft' THEN 1 ELSE 0 END DESC, seq DESC LIMIT 1";
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct SearchHit {
@@ -84,7 +90,15 @@ pub struct SearchHit {
     pub to: String,
     pub start_ms: i64,
     pub end_ms: i64,
+    /// the match touches a turn the user edited: its text is the edit, and the anchor covers the
+    /// whole turn (an edit has no word times of its own)
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub edited: bool,
 }
+
+/// An edited turn's map entry carries both ends of the turn as one id, `"<first> <last>"`: word ids
+/// never contain a space (contract `$defs/id`).
+const EDITED_SEP: char = ' ';
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResult {
@@ -258,15 +272,39 @@ impl<'a, R: MapRead + ?Sized> Map<'a, R> {
 /// The body is one line per channel, each in the stored (time) order: words of the two channels
 /// interleave in time, and a phrase is only ever said on one of them. A query never contains a
 /// line break, so no match spans two channels.
-fn build(md: &MeetingData) -> (String, Vec<Word>) {
+///
+/// An edited turn (`edits`, keyed by turn id) is indexed as its edited text in place of its
+/// words, as one map entry: its first and last word ids (`EDITED_SEP`) with the turn's time span.
+/// A hit inside it anchors at the whole turn (an edit has no word times of its own).
+fn build(md: &MeetingData, edits: &BTreeMap<String, TurnEdit>) -> (String, Vec<Word>) {
+    // word index -> (edited text, the turn's span), for the first word of each edited turn;
+    // the turn's other words are skipped
+    let pos: HashMap<&str, usize> = md.words.iter().enumerate().map(|(i, w)| (w.id.as_str(), i)).collect();
+    let mut replaced: HashMap<usize, (&str, String, i64, i64)> = HashMap::new();
+    let mut skipped = vec![false; md.words.len()];
+    for t in &md.turns {
+        let (Some(e), Some(&a), Some(&b)) = (edits.get(&t.id), pos.get(t.first_word.as_str()), pos.get(t.last_word.as_str())) else { continue };
+        if a > b {
+            continue;
+        }
+        replaced.insert(a, (e.text.as_str(), format!("{}{EDITED_SEP}{}", t.first_word, t.last_word), t.start_ms, t.end_ms));
+        skipped[a + 1..=b].iter_mut().for_each(|s| *s = true);
+    }
     let mut channels: Vec<u32> = md.words.iter().map(|w| w.channel).collect();
     channels.sort_unstable();
     channels.dedup();
     let (mut body, mut chars, mut map) = (String::new(), 0u32, Vec::with_capacity(md.words.len()));
     for ch in channels {
         let mut first = true;
-        for w in md.words.iter().filter(|w| w.channel == ch) {
-            let t = clean(&w.text);
+        for (i, w) in md.words.iter().enumerate().filter(|(_, w)| w.channel == ch) {
+            if skipped[i] {
+                continue;
+            }
+            let (text, id, start, end) = match replaced.get(&i) {
+                Some((text, id, start, end)) => (*text, id.clone(), *start, *end),
+                None => (w.text.as_str(), w.id.clone(), w.start_ms, w.end_ms),
+            };
+            let t = clean(text);
             if t.is_empty() {
                 continue;
             }
@@ -275,7 +313,7 @@ fn build(md: &MeetingData) -> (String, Vec<Word>) {
                 chars += 1;
             }
             first = false;
-            map.push((w.id.clone(), w.start_ms, w.end_ms, chars));
+            map.push((id, start, end, chars));
             chars += t.chars().count() as u32;
             body.push_str(&t);
         }
@@ -331,14 +369,54 @@ fn places(folded: &[char], needle: &[char]) -> Vec<Place> {
     out
 }
 
+/// Which chars of the body range `lo..hi` belong to an edited turn's entry (`build`).
+fn edited_chars<R: MapRead + ?Sized>(map: &Map<'_, R>, lo: usize, hi: usize) -> Result<Vec<bool>> {
+    let mut out = vec![false; hi - lo];
+    if hi <= lo {
+        return Ok(out);
+    }
+    let (first, last) = (map.word_at(lo)?, map.word_at(hi - 1)?);
+    for k in first..=last {
+        if !map.word(k)?.0.contains(EDITED_SEP) {
+            continue;
+        }
+        // the entry runs to the next one (its trailing space included), clipped to the range
+        let a = (map.offset(k)? as usize).clamp(lo, hi) - lo;
+        let b = if k + 1 < map.n { (map.offset(k + 1)? as usize).clamp(lo, hi) - lo } else { hi - lo };
+        out[a..b.max(a)].iter_mut().for_each(|e| *e = true);
+    }
+    Ok(out)
+}
+
+/// `chars` as shown: the vocabulary replacements applied to each stretch that is not an edited
+/// turn's text (`edited`, one flag per char); an edit is shown as typed (`overlay::display_text`).
+fn shown_piece(v: &Vocabulary, chars: &[char], edited: &[bool]) -> String {
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let e = edited.get(i).copied().unwrap_or(false);
+        let mut j = i;
+        while j < chars.len() && edited.get(j).copied().unwrap_or(false) == e {
+            j += 1;
+        }
+        let run: String = chars[i..j].iter().collect();
+        out.push_str(&if e { run } else { vocabulary::apply_replacements(v, &run) });
+        i = j;
+    }
+    out
+}
+
 /// Total count, and the first `keep` hits in time order. `text(from, len)` returns `len` chars of
-/// the body starting at char `from`.
+/// the body starting at char `from`. With `shown`, the snippet pieces (before, match, after) are
+/// shown with its replacements, each piece on its own (a rule spanning a piece's edge is not
+/// applied there), edited turns' text left as typed.
 fn hits_of<R: MapRead + ?Sized>(
     folded: &str,
     q: &str,
     map: &Map<'_, R>,
     keep: usize,
     text: &dyn Fn(usize, usize) -> Result<String>,
+    shown: Option<&Vocabulary>,
 ) -> Result<(usize, Vec<SearchHit>)> {
     let folded: Vec<char> = folded.chars().collect();
     let needle: Vec<char> = q.chars().collect();
@@ -367,8 +445,21 @@ fn hits_of<R: MapRead + ?Sized>(
         let b = map.word_at(p.end - 1)?;
         let (from, start_ms, _) = map.word(a)?;
         let (to, _, end_ms) = map.word(b)?;
+        // an edited turn's entry names its first and last word
+        let edited = from.contains(EDITED_SEP) || to.contains(EDITED_SEP);
+        let from = from.split(EDITED_SEP).next().unwrap_or_default().to_string();
+        let to = to.rsplit(EDITED_SEP).next().unwrap_or_default().to_string();
         let snip = text(p.lo, p.hi - p.lo)?.chars().collect::<Vec<char>>();
-        let part = |r: std::ops::Range<usize>| snip.get(r).map(|s| s.iter().collect::<String>()).unwrap_or_default();
+        let marks = match shown {
+            Some(_) => edited_chars(map, p.lo, p.hi)?,
+            None => Vec::new(),
+        };
+        let part = |r: std::ops::Range<usize>| {
+            let (Some(chars), Some(v)) = (snip.get(r.clone()), shown) else {
+                return snip.get(r).map(|s| s.iter().collect::<String>()).unwrap_or_default();
+            };
+            shown_piece(v, chars, marks.get(r).unwrap_or(&[]))
+        };
         hits.push(SearchHit {
             before: format!("{}{}", if p.cut_lo { "…" } else { "" }, part(0..p.at - p.lo)),
             text: part(p.at - p.lo..p.end - p.lo),
@@ -377,6 +468,7 @@ fn hits_of<R: MapRead + ?Sized>(
             to,
             start_ms,
             end_ms: end_ms.max(start_ms),
+            edited,
         });
     }
     Ok((all.len(), hits))
@@ -427,7 +519,10 @@ impl Store {
             )?;
             return Ok(false);
         };
-        let (body, map) = build(md);
+        // the head's edited turns are searched as they are shown (store::overlay)
+        let sha: String = self.conn.query_row("SELECT content_sha256 FROM versions WHERE id=?1", [&head], |r| r.get(0))?;
+        let edits = self.overlay_for_content(meeting_id, &sha)?.edits;
+        let (body, map) = build(md, &edits);
         let folded = fold_str(&body);
         self.conn.execute(
             "INSERT INTO search_docs (meeting_id, version_id, body, folded, word_map) VALUES (?1,?2,?3,?4,?5)",
@@ -495,8 +590,15 @@ impl Store {
     /// Meetings whose head text contains `query` (literal, case-insensitive), newest first.
     /// Empty or whitespace-only input finds nothing. Meetings not indexed yet are indexed first,
     /// within `SEARCH_INDEX_BUDGET`; the rest are counted in `pending`.
-    #[allow(clippy::type_complexity)]
     pub fn search(&self, query: &str) -> Result<SearchOutcome> {
+        self.search_shown(query, None)
+    }
+
+    /// [`Store::search`], with the snippets shown as the transcript shows them: the `vocabulary`
+    /// replacements applied to unedited text (the match itself is found in the stored text).
+    #[allow(clippy::type_complexity)]
+    pub fn search_shown(&self, query: &str, vocabulary: Option<&Vocabulary>) -> Result<SearchOutcome> {
+        let vocabulary = vocabulary.filter(|v| !v.replacements.is_empty());
         // best effort, as at open: a busy database (or one bad meeting) must not cost the search
         let pending = match self.index_pending(Some(SEARCH_INDEX_BUDGET)) {
             Ok(n) => n,
@@ -529,7 +631,7 @@ impl Store {
         let mut out = Vec::with_capacity(rows.len());
         let mut damaged = 0;
         for (id, meeting_id, version_id, title, started_at, created_at, kind) in rows {
-            match self.hits_of_row(id, &q) {
+            match self.hits_of_row(id, &q, vocabulary) {
                 Ok((0, _)) => {}
                 Ok((matches, hits)) => out.push(SearchResult { meeting_id, title, started_at, created_at, version_id, kind, matches, hits }),
                 // a damaged row costs only itself: it is dropped and built again by the backfill
@@ -543,14 +645,14 @@ impl Store {
         Ok(SearchOutcome { meetings: out, more, pending: pending + damaged, skipped })
     }
 
-    fn hits_of_row(&self, id: i64, q: &str) -> Result<(usize, Vec<SearchHit>)> {
+    fn hits_of_row(&self, id: i64, q: &str, shown: Option<&Vocabulary>) -> Result<(usize, Vec<SearchHit>)> {
         let folded: String = self.conn.query_row("SELECT folded FROM search_docs WHERE id=?1", [id], |r| r.get(0))?;
         let blob = self.conn.blob_open(rusqlite::MAIN_DB, c"search_docs", c"word_map", id, true)?;
         let map = Map::new(&blob)?;
         let text = |from: usize, len: usize| -> Result<String> {
             Ok(self.conn.query_row("SELECT substr(body, ?2, ?3) FROM search_docs WHERE id=?1", params![id, from as i64 + 1, len as i64], |r| r.get(0))?)
         };
-        hits_of(&folded, q, &map, MAX_HITS_PER_MEETING, &text)
+        hits_of(&folded, q, &map, MAX_HITS_PER_MEETING, &text, shown)
     }
 }
 
@@ -586,7 +688,7 @@ mod tests {
         let m = Map::new(bytes.as_slice()).unwrap();
         let chars: Vec<char> = body.chars().collect();
         let text = |from: usize, len: usize| Ok(chars[from..from + len].iter().collect());
-        hits_of(&fold_str(&body), &prepare_query(q), &m, 5, &text).unwrap()
+        hits_of(&fold_str(&body), &prepare_query(q), &m, 5, &text, None).unwrap()
     }
 
     #[test]

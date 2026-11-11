@@ -44,6 +44,8 @@ extern "C" {
     fn nemo_speech_diar_create(cfg: *const ModelConfig, out: *mut *mut ModelOpaque) -> i32;
     fn nemo_speech_diar_destroy(m: *mut ModelOpaque);
     fn nemo_speech_diar_num_speakers(m: *const ModelOpaque) -> i32;
+    fn nemo_speech_diar_seconds_per_frame(m: *const ModelOpaque) -> f64;
+    fn nemo_speech_diar_frame_count(s: *const JobOpaque) -> i64;
     fn nemo_speech_diar_stream_open(m: *mut ModelOpaque, out: *mut *mut JobOpaque) -> i32;
     fn nemo_speech_diar_stream_push_f32(s: *mut JobOpaque, samples: *const f32, n: usize, sample_rate: i32) -> i32;
     fn nemo_speech_diar_stream_finish(s: *mut JobOpaque) -> i32;
@@ -92,33 +94,78 @@ impl Diarizer {
     /// Who spoke when in `pcm`, segments in seconds sorted by start, with the library's own
     /// segmentation defaults. The audio is read from the file as it is pushed: memory does not grow
     /// with the length of the recording.
-    pub fn run<R: Read>(&mut self, pcm: &mut Pcm<R>) -> Result<Vec<Segment>, String> {
+    pub fn run<R: Read>(&self, pcm: &mut Pcm<R>) -> Result<Vec<Segment>, String> {
+        let mut job = self.open()?;
+        let slice = (pcm.rate as usize * PUSH_MS / 1000).max(1);
+        loop {
+            let part = pcm.read(slice).map_err(|e| format!("cannot read the wav: {}", e.kind()))?;
+            if part.is_empty() {
+                break;
+            }
+            job.push(&part, pcm.rate)?;
+        }
+        job.finish()?;
+        job.segments()
+    }
+
+    /// A stream fed piece by piece (`run`, and the live session of the engine). Independent streams
+    /// of one model are allowed by the library (its compute serializes internally).
+    pub fn open(&self) -> Result<Stream<'_>, String> {
         let mut job = std::ptr::null_mut();
-        // SAFETY: the model is live; a non-null job is closed below on every path
+        // SAFETY: the model is live; a non-null job is closed by Stream's drop on every path
         check(unsafe { nemo_speech_diar_stream_open(self.model, &mut job) }, "cannot open the stream")?;
-        let r = (|| {
-            let slice = (pcm.rate as usize * PUSH_MS / 1000).max(1);
-            loop {
-                let part = pcm.read(slice).map_err(|e| format!("cannot read the wav: {}", e.kind()))?;
-                if part.is_empty() {
-                    break;
-                }
-                // SAFETY: job is open and part is valid for its length
-                check(unsafe { nemo_speech_diar_stream_push_f32(job, part.as_ptr(), part.len(), pcm.rate) }, "push failed")?;
-            }
-            check(unsafe { nemo_speech_diar_stream_finish(job) }, "finish failed")?;
-            let mut count = 0usize;
-            check(unsafe { nemo_speech_diar_segments(job, std::ptr::null(), std::ptr::null_mut(), 0, &mut count) }, "segment count failed")?;
-            let mut segs = vec![Segment { start_time: 0.0, end_time: 0.0, speaker: 0 }; count];
-            if count > 0 {
-                check(unsafe { nemo_speech_diar_segments(job, std::ptr::null(), segs.as_mut_ptr(), count, &mut count) }, "segments failed")?;
-                segs.truncate(count);
-            }
-            Ok(segs)
-        })();
-        // SAFETY: the job is open and owned here
-        unsafe { nemo_speech_diar_stream_close(job) };
-        r
+        // SAFETY: the model is live
+        let frame_s = unsafe { nemo_speech_diar_seconds_per_frame(self.model) };
+        Ok(Stream { job, frame_s, _model: std::marker::PhantomData })
+    }
+}
+
+/// One diarization stream. It borrows its model, which must outlive it (the library's rule).
+pub struct Stream<'a> {
+    job: *mut JobOpaque,
+    frame_s: f64,
+    _model: std::marker::PhantomData<&'a Diarizer>,
+}
+
+impl Stream<'_> {
+    /// Mono samples at `rate` (8-96 kHz; the library resamples; the rate must not change).
+    pub fn push(&mut self, samples: &[f32], rate: i32) -> Result<(), String> {
+        // SAFETY: the job is open and samples is valid for its length
+        check(unsafe { nemo_speech_diar_stream_push_f32(self.job, samples.as_ptr(), samples.len(), rate) }, "push failed")
+    }
+
+    /// No more audio: label the tail. The library ignores later pushes.
+    pub fn finish(&mut self) -> Result<(), String> {
+        // SAFETY: the job is open
+        check(unsafe { nemo_speech_diar_stream_finish(self.job) }, "finish failed")
+    }
+
+    /// How much audio the model has labelled so far, in ms. It advances in whole chunks, so it
+    /// trails what was pushed by up to a chunk plus its right context.
+    pub fn labelled_ms(&self) -> i64 {
+        // SAFETY: the job is open
+        let frames = unsafe { nemo_speech_diar_frame_count(self.job) };
+        (frames as f64 * self.frame_s * 1000.0).round() as i64
+    }
+
+    /// The segments so far (complete after `finish`), sorted by start, with the library's defaults.
+    pub fn segments(&self) -> Result<Vec<Segment>, String> {
+        let mut count = 0usize;
+        // SAFETY: the job is open; the second call gets a buffer of `count` segments
+        check(unsafe { nemo_speech_diar_segments(self.job, std::ptr::null(), std::ptr::null_mut(), 0, &mut count) }, "segment count failed")?;
+        let mut segs = vec![Segment { start_time: 0.0, end_time: 0.0, speaker: 0 }; count];
+        if count > 0 {
+            check(unsafe { nemo_speech_diar_segments(self.job, std::ptr::null(), segs.as_mut_ptr(), count, &mut count) }, "segments failed")?;
+            segs.truncate(count);
+        }
+        Ok(segs)
+    }
+}
+
+impl Drop for Stream<'_> {
+    fn drop(&mut self) {
+        // SAFETY: the job is open and owned here; the model it borrows is still live
+        unsafe { nemo_speech_diar_stream_close(self.job) }
     }
 }
 
@@ -221,9 +268,27 @@ pub fn turns(segments: &[Segment], duration_ms: i64) -> Vec<Value> {
     v.into_iter().map(|(a, b, s)| json!({ "start_ms": a, "end_ms": b, "speaker": format!("spk{s}") })).collect()
 }
 
+/// How many leading turns `next` shares with `prev`: an update says "keep that many, the rest is
+/// this", so a turn the model revised (a segment that grew, a label that changed) is sent again with
+/// everything after it, and nothing before it is.
+pub fn kept(prev: &[Value], next: &[Value]) -> usize {
+    prev.iter().zip(next).take_while(|(a, b)| a == b).count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_update_keeps_the_common_prefix_and_resends_the_rest() {
+        let t = |a: i64, b: i64, s: &str| json!({ "start_ms": a, "end_ms": b, "speaker": s });
+        let prev = [t(0, 1000, "spk1"), t(1200, 2000, "spk2")];
+        assert_eq!(kept(&prev, &[t(0, 1000, "spk1"), t(1200, 2600, "spk2")]), 1, "the last turn grew");
+        assert_eq!(kept(&prev, &[t(0, 1000, "spk1"), t(1200, 2000, "spk2"), t(2100, 2500, "spk1")]), 2, "a turn was added");
+        assert_eq!(kept(&prev, &[t(0, 1000, "spk2")]), 0, "relabelled from the start");
+        assert_eq!(kept(&[], &prev), 0);
+        assert_eq!(kept(&prev, &prev), 2);
+    }
 
     fn wav(channels: u16, rate: u32, bits: u16, samples: &[i16], header_len: Option<u32>) -> Vec<u8> {
         let data: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();

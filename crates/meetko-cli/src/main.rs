@@ -13,10 +13,11 @@ use clap::{Parser, Subcommand, ValueEnum};
 use meetko_core::contract::MeetingData;
 use meetko_core::diarize::{DiarConfig, DiarProcess};
 use meetko_core::manifest::{plugin_code_sha256, Manifest};
+use meetko_core::overlay::{Overlay, View};
 use meetko_core::plugin_source::{self, Endpoints, PluginSource, SourceSpec};
 use meetko_core::store::{ImportChannel, ImportOptions, ResultRow, Store};
 use meetko_core::whisper::WhisperCli;
-use meetko_core::{capture, export, host, pipeline, util};
+use meetko_core::{capture, export, host, pipeline, secrets, util};
 
 // the Korean-first channel names live here, not in core
 const MIC_LABEL: &str = "나";
@@ -102,6 +103,11 @@ enum Cmd {
     /// The query is literal and case-insensitive; prints one line per meeting, then its hits as
     /// `  mm:ss  <word id>..<word id>  …context…`.
     Search { query: String },
+    /// serve MCP on stdin/stdout for an AI agent you run (Codex CLI, Claude Code, ...): it can read
+    /// meetings, transcripts, provenance and results, and store results that the app shows marked as
+    /// made by an external agent. The agent's own login is used; meetko handles no AI tokens.
+    /// See docs/mcp.md.
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -136,6 +142,22 @@ enum PluginCmd {
     Info { spec: String },
     /// list plugins with their declared permissions
     List,
+    /// API keys a plugin declares (`[permissions] secrets`). Values live in the OS keychain (macOS),
+    /// keyed by plugin id and where the plugin came from; a run gets only its own declared keys.
+    #[command(subcommand)]
+    Secret(SecretCmd),
+}
+
+#[derive(Subcommand)]
+enum SecretCmd {
+    /// save a value (a declared secret or setting); it is read from stdin (never from the command
+    /// line), e.g. `pbpaste | meetko plugin secret set meetko/summary-py ANTHROPIC_API_KEY`. On a
+    /// terminal the typed value is not echoed.
+    Set { plugin_id: String, name: String },
+    /// remove a saved value
+    Clear { plugin_id: String, name: String },
+    /// the declared names and whether each is set (never the values)
+    Status { plugin_id: String },
 }
 
 #[derive(Clone, ValueEnum)]
@@ -151,7 +173,8 @@ fn mmss(ms: i64) -> String {
     format!("{:02}:{:02}", s / 60, s % 60)
 }
 
-fn print_show(md: &MeetingData) -> Result<()> {
+/// Turns as the app shows them: the speaker names and edited text of `overlay` (store::overlay).
+fn print_show(md: &MeetingData, overlay: &Overlay) -> Result<()> {
     println!(
         "{}  {} ({})  {}",
         md.meeting.title.as_deref().unwrap_or(&md.meeting.id),
@@ -160,15 +183,11 @@ fn print_show(md: &MeetingData) -> Result<()> {
         mmss(md.recording.duration_ms)
     );
     let pos: std::collections::HashMap<&str, usize> = md.words.iter().enumerate().map(|(i, w)| (w.id.as_str(), i)).collect();
+    let view = View::of(overlay);
     for t in &md.turns {
-        let who = t
-            .speaker
-            .as_deref()
-            .and_then(|s| md.speakers.iter().find(|x| x.id == s))
-            .map(|s| s.label.as_deref().unwrap_or(&s.id))
-            .unwrap_or("?");
-        let text: Vec<&str> = export::turn_words(md, &pos, t)?.iter().map(|w| w.text.as_str()).collect();
-        println!("[{}] {}: {}", mmss(t.start_ms), who, text.join(" "));
+        let who = view.speaker(md, t.speaker.as_deref()).unwrap_or("?");
+        let mark = if overlay.edits.contains_key(&t.id) { " (edited)" } else { "" };
+        println!("[{}] {}: {}{mark}", mmss(t.start_ms), who, view.text(md, &pos, t)?);
     }
     Ok(())
 }
@@ -188,6 +207,16 @@ fn print_result(r: &ResultRow, json: bool) {
         kinds.join(", "),
         r.sandbox
     );
+    if let Some(a) = &r.agent {
+        let s = |v: &serde_json::Value| esc(v.as_str().unwrap_or("?"));
+        println!(
+            "  made by an AI agent over MCP: {} {} via {} {}; the transcript may have left this device",
+            s(&a["agent"]["name"]),
+            s(&a["agent"]["version"]),
+            s(&a["client"]["name"]),
+            s(&a["client"]["version"])
+        );
+    }
     if json {
         println!("{}", serde_json::to_string_pretty(&r.output).unwrap_or_default());
     }
@@ -216,6 +245,13 @@ fn show_plugin(dir: &std::path::Path, source: Option<&PluginSource>) -> Result<(
         eprintln!("  source:           {} @ {} (commit {})", esc(&s.repo), esc(&s.reference), esc(&s.sha));
     }
     eprintln!("  declared network: {}", manifest.permissions.network);
+    if !manifest.permissions.secrets.is_empty() {
+        // names only: the manifest parser already checked their shape
+        eprintln!("  API keys:         {} (this plugin uses API keys and the network; set them with `meetko plugin secret set`)", manifest.permissions.secrets.join(", "));
+    }
+    if !manifest.permissions.settings.is_empty() {
+        eprintln!("  settings:         {}", manifest.permissions.settings.join(", "));
+    }
     eprintln!("  declared audio:   {}", manifest.input.audio);
     eprintln!("  code sha256:      {code_sha}");
     Ok((code_sha, p.id.clone()))
@@ -230,6 +266,13 @@ fn install(store: &Store, dir: &std::path::Path, fetched: Option<&plugin_source:
     if let Some((v, old)) = &shown {
         let from = old.as_ref().map(|s| esc(&s.repo)).unwrap_or_else(|| "a local folder".into());
         eprintln!("  REPLACES:         {}@{} installed from {from}", esc(&id), esc(v));
+    }
+    // keys belong to an id and its origin: an install that moves the id elsewhere drops the old ones
+    let prior = secrets::Prior::of(store, &id)?;
+    match (&shown, &prior) {
+        (None, Some(p)) if p.declares_values() => eprintln!("  saved API keys and settings of the installed {} stay (same origin)", esc(&id)),
+        (Some(_), Some(p)) if p.declares_values() => eprintln!("  the installed plugin's saved API keys and settings are removed, not handed over"),
+        _ => {}
     }
     let replace_key = shown.filter(|_| replace).map(|(v, old)| meetko_core::store::replace_key(&v, old.as_ref()));
     eprintln!("note: {PERMISSION_NOTICE}");
@@ -250,8 +293,119 @@ fn install(store: &Store, dir: &std::path::Path, fetched: Option<&plugin_source:
         Some(f) => store.install_fetched(f, Some(&code_sha), replace_key.as_deref())?,
         None => store.install_plugin_from(dir, Some(&code_sha), None, replace_key.as_deref())?,
     };
+    if let Some(p) = prior {
+        if let Err(e) = p.forget_if_moved(store, &*secrets::system()) {
+            eprintln!("warning: the replaced plugin's API keys could not be removed from the keychain: {}", esc_msg(&e.to_string()));
+        }
+    }
     eprintln!("added {}@{}", row.id, row.version);
     println!("{}", row.id);
+    Ok(())
+}
+
+/// Terminal echo is off while this lives; dropping it, Ctrl-C, SIGTERM or SIGHUP (the handler set
+/// here, `ctrlc` with its `termination` feature) turns echo back on. SIGKILL cannot be caught: after
+/// one, `stty echo` (or `reset`) restores the terminal.
+struct EchoOff;
+
+fn stty(arg: &str) -> bool {
+    std::process::Command::new("stty").arg(arg).stdin(std::process::Stdio::inherit()).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
+}
+
+impl EchoOff {
+    fn new() -> Option<EchoOff> {
+        // the handler runs on its own thread, so spawning stty there is safe; 130 = interrupted.
+        // (The same handler covers SIGTERM/SIGHUP; `transcribe` sets its own, so this one only
+        // exists in `plugin secret set`.)
+        let _ = ctrlc::set_handler(|| {
+            stty("echo");
+            eprintln!();
+            std::process::exit(130);
+        });
+        stty("-echo").then_some(EchoOff)
+    }
+}
+
+impl Drop for EchoOff {
+    fn drop(&mut self) {
+        stty("echo");
+    }
+}
+
+/// Read one secret value from stdin: without echo on a terminal, else the piped text. One trailing
+/// line break is dropped; the rest is checked by `secrets::check_value`.
+fn read_secret(name: &str) -> Result<String> {
+    use std::io::Read;
+    let tty = std::io::stdin().is_terminal();
+    let mut raw = Vec::new();
+    if tty {
+        // never read a key with echo on: without stty (or when it fails) ask for a pipe instead
+        let guard = EchoOff::new().ok_or_else(|| anyhow::anyhow!("cannot turn off echo on this terminal; pipe the value in instead, e.g. `pbpaste | meetko plugin secret set ...`"))?;
+        eprint!("{name} (not shown): ");
+        std::io::stderr().flush().ok();
+        let mut line = String::new();
+        let read = std::io::stdin().lock().read_line(&mut line);
+        drop(guard);
+        eprintln!();
+        read?;
+        raw = line.into_bytes();
+    } else {
+        std::io::stdin().lock().take(secrets::MAX_VALUE as u64 + 3).read_to_end(&mut raw)?;
+    }
+    let mut v = String::from_utf8(raw).map_err(|_| anyhow::anyhow!("the value is not UTF-8 text"))?;
+    if v.ends_with('\n') {
+        v.pop();
+        if v.ends_with('\r') {
+            v.pop();
+        }
+    }
+    Ok(v)
+}
+
+fn secret_cmd(store: &Store, cmd: SecretCmd) -> Result<()> {
+    let keychain = secrets::system();
+    let status = |id: &str| -> Result<()> {
+        for e in secrets::status(store, &*keychain, id)? {
+            match (e.kind, e.value) {
+                // a setting is not secret: show it (escaped, it is text the user typed)
+                (secrets::Kind::Setting, Some(v)) => println!("{}  setting  {}", e.name, esc(&v)),
+                // saved by another meetko program, and this one was not allowed to read it
+                (secrets::Kind::Setting, None) if e.set => println!("{}  setting  set (this program was not allowed to read it)", e.name),
+                (secrets::Kind::Setting, None) => println!("{}  setting  not set", e.name),
+                (secrets::Kind::Secret, _) => println!("{}  secret   {}", e.name, if e.set { "set" } else { "not set" }),
+            }
+        }
+        Ok(())
+    };
+    match cmd {
+        SecretCmd::Set { plugin_id, name } => {
+            secrets::key_for(store, &plugin_id, &name)?; // refuse an undeclared name before asking for a value
+            let value = read_secret(&name)?;
+            secrets::set(store, &*keychain, &plugin_id, &name, &value)?;
+            eprintln!("saved {name} for {plugin_id} in the keychain");
+            if cfg!(target_os = "macos") {
+                // the keychain lets the program that saved an item read it; any other one must ask
+                eprintln!(
+                    "note: keys saved with the CLI may prompt the app once: macOS asks for this Mac's login password, then choose \"Always Allow\". \
+                     Saving the key in the app instead (Plugins > API 키 넣기) avoids the prompt."
+                );
+            }
+            if store.plugin_source(&plugin_id)?.is_none() {
+                eprintln!("note: re-adding this plugin from a local folder keeps its saved values; installing the same id from elsewhere removes them");
+            }
+        }
+        SecretCmd::Clear { plugin_id, name } => {
+            secrets::clear(store, &*keychain, &plugin_id, &name)?;
+            eprintln!("removed {name} for {plugin_id}");
+        }
+        SecretCmd::Status { plugin_id } => {
+            let (_, m) = store.plugin(&plugin_id)?;
+            if m.permissions.secrets.is_empty() && m.permissions.settings.is_empty() {
+                eprintln!("{plugin_id} declares no API keys or settings");
+            }
+            status(&plugin_id)?;
+        }
+    }
     Ok(())
 }
 
@@ -269,6 +423,14 @@ fn main() -> std::process::ExitCode {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let store = Store::open(&util::data_dir()).context("cannot open the data dir")?;
+    if let Cmd::Mcp = cli.cmd {
+        // stdout is the protocol; open-time warnings name the data dir, which stays private
+        if !store.warnings().is_empty() {
+            eprintln!("meetko mcp: {} warning(s) about the data dir; run `meetko list` in a terminal to see them", store.warnings().len());
+        }
+        let mut server = meetko_core::mcp::Server::new(store);
+        return Ok(server.serve(std::io::stdin().lock(), std::io::stdout().lock())?);
+    }
     for w in store.warnings() {
         eprintln!("warning: {}", esc_msg(w));
     }
@@ -308,7 +470,7 @@ fn run() -> Result<()> {
             println!("{}", out.meeting.id);
         }
         Cmd::Transcribe { meeting_id, language } => {
-            let engine = WhisperCli::load(store.dir())?;
+            let engine = WhisperCli::load(store.dir())?.with_hints(meetko_core::vocabulary::hints_for_engine(store.dir()));
             let cancel = Arc::new(AtomicBool::new(false));
             let c2 = cancel.clone();
             let _ = ctrlc::set_handler(move || c2.store(true, Ordering::SeqCst));
@@ -367,6 +529,7 @@ fn run() -> Result<()> {
                 println!("{}@{}  declared network={} audio={} ({how}){from}", p.id, p.version, p.network, p.audio);
             }
         }
+        Cmd::Plugin(PluginCmd::Secret(cmd)) => secret_cmd(&store, cmd)?,
         Cmd::Run { plugin_id, version_id, timeout } => {
             let secs = timeout
                 .or_else(|| std::env::var("MEETKO_PLUGIN_TIMEOUT_SECS").ok().and_then(|v| v.parse().ok()))
@@ -376,7 +539,7 @@ fn run() -> Result<()> {
                 print_result(&r, false);
             }
         }
-        Cmd::Show { version_id } => print_show(&store.version(&version_id)?)?,
+        Cmd::Show { version_id } => print_show(&store.version(&version_id)?, &store.overlay(&version_id)?)?,
         Cmd::Export { version_id, format, channel } => {
             let md = store.version(&version_id)?;
             let out = match format {
@@ -405,6 +568,7 @@ fn run() -> Result<()> {
                 }
             }
         }
+        Cmd::Mcp => unreachable!("served above"),
         Cmd::Search { query } => {
             // a command line can wait: index every meeting not indexed yet, so the answer is complete
             if store.index_pending(Some(std::time::Duration::ZERO))? > 0 {

@@ -592,6 +592,12 @@ pub fn index_url() -> String {
 pub struct GalleryPermissions {
     pub network: bool,
     pub audio: bool,
+    /// declared secret names (`[permissions] secrets`); an index without the field lists none
+    #[serde(default)]
+    pub secrets: Vec<String>,
+    /// declared setting names (`[permissions] settings`); an index without the field lists none
+    #[serde(default)]
+    pub settings: Vec<String>,
 }
 
 /// One row of `index.json` (tools/plugin-index/index.schema.json). Declared facts about a
@@ -632,7 +638,8 @@ impl GalleryEntry {
         let shown_ok = [(&self.name, 64), (&self.version, 64), (&self.description, 300), (&self.reference, 200), (&self.runtime, 32), (&self.license, 64), (&self.updated, 64)]
             .iter()
             .all(|(s, max)| plain_text(s, *max));
-        is_full_sha(&self.sha) && valid_plugin_id(&self.id) && self.spec().is_ok() && self.repo.len() <= 201 && shown_ok
+        let secrets_ok = crate::secrets::check_declared(&crate::manifest::Permissions { network: self.permissions.network, secrets: self.permissions.secrets.clone(), settings: self.permissions.settings.clone() }).is_ok();
+        is_full_sha(&self.sha) && valid_plugin_id(&self.id) && self.spec().is_ok() && self.repo.len() <= 201 && shown_ok && secrets_ok
     }
 }
 

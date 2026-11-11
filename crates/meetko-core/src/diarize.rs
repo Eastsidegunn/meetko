@@ -11,6 +11,9 @@
 //! that copy is loaded. One process serves all channels of a run (the model loads once) and ends
 //! with the `DiarProcess`. Nothing here is required: no configuration, no diarization, and any
 //! failure is the caller's to turn into a warning.
+//!
+//! The same engine also runs while a capture records (`live::diar`): its turns then label the
+//! live captions, and the stored live version carries them, so the draft needs no pass from here.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};

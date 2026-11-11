@@ -26,6 +26,9 @@ const MIN_REFERENCE_RECALL: f64 = 0.90;
 /// which are dropped, while the engine writes them in Hangul: those extra syllables count as errors,
 /// so the measured 0.56 is mostly that. The bound only catches broken output.
 const MAX_CER: f64 = 0.70;
+/// Share of the reference's letters and digits a code-switched recording may lose (see
+/// `code_switched_utterances_are_not_dropped`).
+const MAX_CODESWITCH_DELETIONS: f64 = 0.35;
 
 fn repo(p: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..").join(p)
@@ -363,4 +366,68 @@ fn a_closed_stream_can_be_opened_again_and_a_second_open_is_refused() {
     assert!(first_of_round_two > 0, "segment numbering restarted at 0");
     eng.call("shutdown", json!({})).unwrap();
     assert_eq!(eng.die(), Some(0));
+}
+
+/// Letters and digits only, lower case: what a deletion count is taken over.
+fn letters(s: &str) -> Vec<char> {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// (edits, deletions) of one optimal alignment of `hyp` to `reference`.
+fn deletions(reference: &[char], hyp: &[char]) -> (usize, usize) {
+    let (n, m) = (reference.len(), hyp.len());
+    let mut d = vec![vec![0usize; m + 1]; n + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    d[0] = (0..=m).collect();
+    for i in 1..=n {
+        for j in 1..=m {
+            d[i][j] = (d[i - 1][j - 1] + usize::from(reference[i - 1] != hyp[j - 1])).min(d[i - 1][j] + 1).min(d[i][j - 1] + 1);
+        }
+    }
+    let (mut i, mut j, mut del) = (n, m, 0);
+    while i > 0 || j > 0 {
+        if i > 0 && j > 0 && d[i][j] == d[i - 1][j - 1] + usize::from(reference[i - 1] != hyp[j - 1]) {
+            (i, j) = (i - 1, j - 1);
+        } else if i > 0 && d[i][j] == d[i - 1][j] + 1 {
+            del += 1;
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+    (d[n][m], del)
+}
+
+/// Korean-English code-switched speech must not lose whole utterances: the engine used to carry
+/// the model's state from one utterance to the next, and after a switch of language it emitted
+/// nothing for sentences at a time (about half of the characters were deleted on synthetic
+/// meetings). Needs a code-switched recording that cannot be committed, so it runs only when
+///   MEETKO_CODESWITCH_WAV  a 16 kHz mono PCM16 wav of several utterances with pauses between them
+/// is set; the reference is the .json beside it (`utterances[].text`). MEETKO_STREAM_MODEL as above.
+#[test]
+fn code_switched_utterances_are_not_dropped() {
+    let Some(wav) = std::env::var_os("MEETKO_CODESWITCH_WAV").filter(|v| !v.is_empty()).map(PathBuf::from) else {
+        eprintln!("skipped: MEETKO_CODESWITCH_WAV is not set");
+        return;
+    };
+    let model = env_or("MEETKO_STREAM_MODEL", repo("models/nemotron-3.5-asr-streaming-0.6b"));
+    let reference: Value = serde_json::from_str(&std::fs::read_to_string(wav.with_extension("json")).unwrap()).unwrap();
+    let reference: String = reference["utterances"].as_array().unwrap().iter().map(|u| u["text"].as_str().unwrap()).collect::<Vec<_>>().join(" ");
+    let mut eng = Eng::start(&model);
+    eng.call("initialize", json!({ "contract": ["0.1"] })).unwrap();
+    eng.open("auto").unwrap();
+    for chunk in wav_pcm(&wav).chunks(3200) {
+        eng.push(chunk);
+    }
+    eng.call("stream.close", json!({})).unwrap();
+    eng.call("shutdown", json!({})).unwrap();
+    assert_eq!(eng.die(), Some(0));
+    let text: String = eng.events.iter().filter(|(_, e)| e["final"] == json!(true)).map(|(_, e)| e["text"].as_str().unwrap()).collect::<Vec<_>>().join(" ");
+    let (r, h) = (letters(&reference), letters(&text));
+    let (edits, del) = deletions(&r, &h);
+    let (cer, del_rate) = (edits as f64 / r.len() as f64, del as f64 / r.len() as f64);
+    eprintln!("code-switched: CER {cer:.3}, deleted {del_rate:.3} of {} reference characters\ntranscript: {text}", r.len());
+    assert!(del_rate <= MAX_CODESWITCH_DELETIONS, "{del_rate:.3} of the reference was deleted");
 }

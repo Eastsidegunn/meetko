@@ -79,6 +79,8 @@ jobs:
           python -m pytest tests
       - name: Plugin index tests (tomllib needs Python 3.11+)
         run: python -I tools/plugin-index/test_build_index.py
+      - name: summary-py plugin tests (no network: a loopback fake server)
+        run: python -I plugins/summary-py/test_summary.py
 
       - name: Rust tests (workspace)
         run: cargo test --workspace --locked
@@ -113,6 +115,7 @@ jobs:
           workspaces: |
             engines/sherpa-stream -> target
             engines/nemotron-stream -> target
+            engines/qwen3-asr -> target
       - name: Fetch the pinned sherpa-onnx libraries
         run: engines/sherpa-stream/fetch-libs.sh
       - name: Engine tests
@@ -126,6 +129,14 @@ jobs:
       - name: Nemotron engines clippy
         run: cargo clippy --locked --all-targets -- -D warnings
         working-directory: engines/nemotron-stream
+      - name: Fetch the pinned CrispASR libraries
+        run: engines/qwen3-asr/fetch-libs.sh
+      - name: Qwen3-ASR engine tests (the model-backed tests skip without the models)
+        run: cargo test --locked
+        working-directory: engines/qwen3-asr
+      - name: Qwen3-ASR engine clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: engines/qwen3-asr
       - name: Swift capture tests
         run: ./run-tests.sh
         working-directory: capture/macos

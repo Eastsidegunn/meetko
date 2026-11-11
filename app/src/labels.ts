@@ -30,10 +30,18 @@ export const WARNINGS: Record<string, string> = {
 };
 export const warning = (w: string): string => WARNINGS[w] ?? w;
 
+/** `secret_access_denied` on a plugin run: macOS did not hand the saved API key to this app, so the
+ *  plugin was not started. The prompt asks for the Mac's login password, which people do not expect. */
+export const KEYCHAIN_DENIED_RUN = "맥이 키체인에 저장된 API 키를 꺼내도 되는지 물었는데 허용되지 않았어요. 그래서 플러그인을 실행하지 않았어요. 다시 실행하고, 창이 뜨면 이 맥의 로그인 암호를 넣은 뒤 ‘항상 허용’을 눌러 주세요.";
+export const KEYCHAIN_DENIED_WHY = "그 창은 맥이 직접 띄우는 거예요. 키를 다른 meetko 프로그램(명령줄 meetko나 다른 빌드의 앱)으로 저장하면 이 앱이 처음 쓸 때 한 번 물어요. 플러그인 화면의 ‘API 키 넣기’에서 이 앱으로 다시 저장하면 묻지 않아요.";
+/** `secret_access_denied` when saving or removing a key in the key dialog: another meetko program owns the item. */
+export const KEYCHAIN_DENIED_CHANGE = "이 키는 다른 meetko 프로그램(명령줄 meetko나 다른 빌드의 앱)이 저장한 거라, 맥이 이 앱에서 바꾸는 걸 허용하지 않았어요. 창이 뜨면 이 맥의 로그인 암호를 넣고 허용하거나, 저장했던 프로그램에서 먼저 지운 뒤(명령줄: meetko plugin secret clear) 여기서 다시 저장해 주세요.";
+
 /** core error codes (ApiError.code) whose raw English message is replaced by a plain Korean one */
 export const API_ERRORS: Record<string, string> = {
   stale_draft: "이 초안은 현재 버전보다 오래되어 승인할 수 없어요. 가장 최근 초안을 선택해 승인하세요.",
   busy: "다른 작업이 진행 중이에요. 끝난 뒤 다시 눌러 주세요.",
+  engine_sandbox: "이 컴퓨터에서는 Qwen3-ASR 엔진을 안전하게 격리해서 돌릴 수 없어서 멈췄어요. 설정 › 받아쓰기 준비에서 Whisper로 바꿔 주세요.",
 };
 export const apiErrorText = (code: string, fallback: string): string => API_ERRORS[code] ?? fallback;
 
@@ -56,4 +64,20 @@ export const LIVE_DRAFT_ERRORS: Record<string, string> = {
   corrupt_data: "저장된 실시간 자막이나 녹음 파일이 손상돼 초안을 만들지 못했어요.",
   stale_draft: "이 회의에는 이미 초안이 있어요.",
 };
-export const liveDraftErrorText = (code: string): string => LIVE_DRAFT_ERRORS[code] ?? "예상하지 못한 문제로 초안을 만들지 못했어요. 다시 눌러 보세요.";
+/** The automatic 다시 받아쓰기 after a recording: every code it can end with, in plain Korean (never the
+ *  core's English). The live draft is kept whatever happens; the screen says so next to this. */
+export const RETRANSCRIBE_ERRORS: Record<string, string> = {
+  busy: API_ERRORS.busy,
+  engine_sandbox: API_ERRORS.engine_sandbox,
+  model_missing: "받아쓰기 모델을 찾지 못했어요. 설정 › 받아쓰기 준비에서 확인해 주세요.",
+  engine_not_found: "받아쓰기 엔진을 찾지 못했어요. 설정 › 받아쓰기 준비에서 확인해 주세요.",
+  bad_engine_output: "받아쓰기 엔진이 알아볼 수 없는 결과를 냈어요.",
+  corrupt_data: "녹음 파일이 저장할 때와 달라져서 다시 받아쓰지 않았어요.",
+  invalid_data: "받아쓴 결과가 초안 형식에 맞지 않았어요.",
+  not_found: "이 회의를 찾을 수 없어요.",
+  // the core's one timeout code, also used for a batch engine that ran past its time budget
+  plugin_timeout: "받아쓰기가 정해진 시간 안에 끝나지 않아 멈췄어요.",
+};
+export const retranscribeErrorText = (code: string): string => RETRANSCRIBE_ERRORS[code] ?? "예상하지 못한 문제로 멈췄어요.";
+
+export const liveDraftErrorText =(code: string): string => LIVE_DRAFT_ERRORS[code] ?? "예상하지 못한 문제로 초안을 만들지 못했어요. 다시 눌러 보세요.";

@@ -20,7 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::live::{self, ROLE_DIARIZATION, ROLE_STREAM};
+use crate::live::{self, ROLE_BATCH, ROLE_DIARIZATION, ROLE_STREAM};
 use crate::util;
 
 /// The folder under the data dir that holds app-managed models.
@@ -33,7 +33,7 @@ pub const HF_HOSTS: &[&str] = &["huggingface.co", ".hf.co", ".huggingface.co"];
 /// A pinned model file the app can fetch from its publisher.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Offer {
-    /// stable key for the UI: `stream` | `diarization`
+    /// stable key for the UI: `stream` | `diarization` | `qwen3-asr` | `qwen3-aligner`
     pub key: &'static str,
     /// the role of the engine that loads it (`live::ROLE_*`)
     pub role: &'static str,
@@ -52,9 +52,12 @@ pub struct Offer {
     pub publisher: &'static str,
 }
 
-/// What the app offers. Both files were checked against the pins on 2026-11-10: Hugging Face's
-/// `paths-info` for these revisions reports exactly the pinned sha256 and these sizes.
-pub const OFFERS: [Offer; 2] = [
+/// What the app offers. Every file was checked against the pins on 2026-11-10: Hugging Face's
+/// `paths-info` (the model API's LFS sha256) for these revisions reports exactly the pinned sha256 and
+/// these sizes. The two Qwen3 files make up one model directory (one pin, two offers): the batch
+/// engine needs both, the transcript model and the forced aligner that times its words. They are the
+/// GGUF conversions by CrispASR's author (Qwen publishes no GGUF), which the UI says.
+pub const OFFERS: [Offer; 4] = [
     Offer {
         key: "stream",
         role: ROLE_STREAM,
@@ -78,6 +81,30 @@ pub const OFFERS: [Offer; 2] = [
         size: 107_012_128,
         license: "OpenMDW-1.1",
         publisher: "NVIDIA",
+    },
+    Offer {
+        key: "qwen3-asr",
+        role: ROLE_BATCH,
+        model_id: "qwen3-asr-1.7b-crispasr-q8_0",
+        file: "qwen3-asr-1.7b-q8_0.gguf",
+        repo: "cstr/qwen3-asr-1.7b-GGUF",
+        revision: "674df5d44b50a63e7102a18895ed20e3f91de301",
+        remote_file: "qwen3-asr-1.7b-q8_0.gguf",
+        size: 2_506_723_200,
+        license: "Apache-2.0",
+        publisher: "Qwen (GGUF 변환: CrispASR)",
+    },
+    Offer {
+        key: "qwen3-aligner",
+        role: ROLE_BATCH,
+        model_id: "qwen3-asr-1.7b-crispasr-q8_0",
+        file: "qwen3-forced-aligner-0.6b-q8_0.gguf",
+        repo: "cstr/qwen3-forced-aligner-0.6b-GGUF",
+        revision: "1ec5110602ccab18c878ddebedab0891e290a95c",
+        remote_file: "qwen3-forced-aligner-0.6b-q8_0.gguf",
+        size: 985_594_624,
+        license: "Apache-2.0",
+        publisher: "Qwen (GGUF 변환: CrispASR)",
     },
 ];
 
@@ -119,6 +146,27 @@ impl Offer {
     pub fn partial(&self, data_dir: &Path) -> u64 {
         std::fs::metadata(part_path(&self.path(data_dir))).map(|m| m.len().min(self.size)).unwrap_or(0)
     }
+
+    /// This offer's own file in the app's folder: missing, or present and matching its pin, or present
+    /// and not (`Bad`). Judged per file, so the second file of a two-file model is not "bad" just
+    /// because the first is not there yet. The hash is cached (size, mtime, inode), as for the status.
+    pub fn file_state(&self, data_dir: &Path) -> FileState {
+        let path = self.path(data_dir);
+        if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+            return if path.exists() { FileState::Bad } else { FileState::Missing };
+        }
+        match live::cached_sha256(&path, &data_dir.join("model-sha256-cache.json")) {
+            Ok(sha) if sha == self.sha256() => FileState::Ready,
+            _ => FileState::Bad,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileState {
+    Missing,
+    Ready,
+    Bad,
 }
 
 /// The app-managed model directory for `role` when it holds the file of an offer. Whether the file
@@ -582,7 +630,12 @@ fn remember(data_dir: &Path, o: &Offer) {
 }
 
 /// `download` of an offer from its publisher into the app-managed folder.
+/// A file that is already in place and matches its pin is not fetched again (no network).
 pub fn install(o: &Offer, data_dir: &Path, progress: OnProgress, cancel: &AtomicBool) -> Result<()> {
+    if o.file_state(data_dir) == FileState::Ready {
+        progress(o.size, o.size);
+        return Ok(());
+    }
     download(&o.source(), &o.want(), &o.path(data_dir), progress, cancel)?;
     remember(data_dir, o);
     Ok(())
@@ -605,11 +658,17 @@ mod tests {
             assert!(util::is_sha256(o.sha256()), "{}", o.key);
             assert!(o.revision.len() == 40 && o.revision.bytes().all(|b| b.is_ascii_hexdigit()), "{}: a commit, not a branch", o.key);
             check_hop(&o.url(), HF_HOSTS, false).unwrap();
-            assert!(o.url().starts_with("https://huggingface.co/nvidia/"), "{}", o.url());
+            let publisher = if o.role == ROLE_BATCH { "cstr/" } else { "nvidia/" };
+            assert!(o.url().starts_with(&format!("https://huggingface.co/{publisher}")), "{}", o.url());
             assert!(o.size > 0);
         }
         assert_eq!(offer("stream").unwrap().role, ROLE_STREAM);
         assert_eq!(offer("diarization").unwrap().role, ROLE_DIARIZATION);
+        // the two files of the Qwen3 batch model share its one directory and pin
+        let (asr, al) = (offer("qwen3-asr").unwrap(), offer("qwen3-aligner").unwrap());
+        assert_eq!((asr.role, al.role), (ROLE_BATCH, ROLE_BATCH));
+        assert_eq!(asr.model_id, al.model_id);
+        assert_ne!(asr.file, al.file);
         assert!(offer("whisper").is_none());
     }
 
@@ -771,6 +830,24 @@ mod tests {
         let sha = util::sha256_bytes(b"x");
         let e = import_file(&fifo, &Want { size: 1, sha256: &sha }, &tmp.path().join("m/f"), &|_, _| {}, &AtomicBool::new(false)).unwrap_err();
         assert!(matches!(e, Error::Download("wrong_file", _)), "{e}");
+    }
+
+    #[test]
+    fn each_file_is_judged_on_its_own_and_a_ready_one_is_not_fetched_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (asr, al) = (offer("qwen3-asr").unwrap(), offer("qwen3-aligner").unwrap());
+        assert_eq!((asr.file_state(tmp.path()), al.file_state(tmp.path())), (FileState::Missing, FileState::Missing));
+        std::fs::create_dir_all(al.dir(tmp.path())).unwrap();
+        std::fs::write(al.path(tmp.path()), b"not the aligner").unwrap();
+        assert_eq!((asr.file_state(tmp.path()), al.file_state(tmp.path())), (FileState::Missing, FileState::Bad), "the other file is only missing");
+        // a file the cache already knows as the pinned one (as after a finished download) is ready, and
+        // installing it again does not touch the network (the offer's URL is the real one)
+        live::remember_sha256(&al.path(tmp.path()), al.sha256(), &tmp.path().join("model-sha256-cache.json"));
+        assert_eq!(al.file_state(tmp.path()), FileState::Ready);
+        let seen = std::sync::Mutex::new(vec![]);
+        install(al, tmp.path(), &|d, t| seen.lock().unwrap().push((d, t)), &AtomicBool::new(false)).unwrap();
+        assert_eq!(*seen.lock().unwrap(), [(al.size, al.size)]);
+        assert_eq!(std::fs::read(al.path(tmp.path())).unwrap(), b"not the aligner", "left as it was");
     }
 
     #[test]

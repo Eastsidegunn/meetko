@@ -118,3 +118,29 @@ fn error_messages_never_carry_raw_escape_or_bell_bytes() {
     }
     assert!(err.contains("\\u{1b}"), "the line is shown escaped");
 }
+
+/// `plugin secret`: names are checked against the installed manifest before a value is read, and
+/// the value is never an argument. (Saving touches the OS keychain, so it is not run here.)
+#[test]
+fn secret_commands_refuse_undeclared_names_and_never_take_a_value_argument() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path().join("data");
+    let plugin = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/summary-py");
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "add", plugin.to_str().unwrap(), "--yes"]);
+    assert!(ok, "{err}");
+    assert!(err.contains("API keys:") && err.contains("ANTHROPIC_API_KEY") && !err.contains("stay (same origin)"), "{err}");
+    // adding it again from a local folder: the saved values stay, and the command says so
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "add", plugin.to_str().unwrap(), "--yes"]);
+    assert!(ok && err.contains("stay (same origin)"), "{err}");
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/summary-py", "PATH"]);
+    assert!(!ok && err.contains("does not declare"), "{err}");
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/nope", "ANTHROPIC_API_KEY"]);
+    assert!(!ok && err.contains("not found"), "{err}");
+    // there is no argument for the value: an extra one is a usage error
+    let (_, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "set", "meetko/summary-py", "ANTHROPIC_API_KEY", "sk-test-not-real"]);
+    assert!(!ok && !err.contains("saved"), "{err}");
+    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/action-items-py");
+    meetko(&data, "http://127.0.0.1:9", &["plugin", "add", local.to_str().unwrap(), "--yes"]);
+    let (out, err, ok) = meetko(&data, "http://127.0.0.1:9", &["plugin", "secret", "status", "meetko/action-items-py"]);
+    assert!(ok && out.is_empty() && err.contains("declares no API keys"), "{out} {err}");
+}

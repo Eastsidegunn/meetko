@@ -115,6 +115,122 @@ What meetko 0.1 does and does not do about a plugin you add. Read this before ad
     Python under `-I` imports the common standard library, both bundled examples pass conformance under the production
     policy, and the plugin's pid is the spawned pid (so the timeout kill still reaches the whole process tree).
 
+## Secrets (API keys) and settings
+
+A plugin that calls a hosted AI service needs the user's key. The mechanism is deliberately small
+(`crates/meetko-core/src/secrets.rs`):
+
+- **Declared by name.** `[permissions] secrets = ["ANTHROPIC_API_KEY"]` for credentials and
+  `settings = ["ANTHROPIC_MODEL"]` for plain configuration, at most 4 of each. A name is `A-Z0-9_` and says what it is:
+  a secret ends with `_KEY`, `_TOKEN` or `_SECRET`, a setting with `_MODEL` or `_BASE_URL`. A deny-list stays as a
+  backstop: nothing that steers the loader, interpreters, toolchains, TLS, proxies, name resolution, shells or meetko
+  itself (`PATH`, `HOME`, `DYLD_*`, `LD_*`, `PYTHON*`, `OPENSSL_*`, `SSL_*`, `GO*`, `NPM_CONFIG_*`, `*_PROXY`,
+  `*_CA_BUNDLE`, `MEETKO_*`, ... the full list is in the source). Declaring either requires `network = true`; the
+  manifest is refused otherwise. The consent dialog, `plugin add`/`install`/`info` and the gallery row show the names
+  ("이 플러그인은 API 키(ANTHROPIC_API_KEY)와 네트워크를 써요") before anything is installed. The gallery index carries
+  both lists (`permissions.secrets`, `permissions.settings`) and the app refuses a download whose manifest lists
+  different names (`index_mismatch`).
+- **Stored in the OS keychain only**, settings too (a base URL is where the key is sent, so another plugin must not be
+  able to change it through a file). macOS: the login keychain, generic-password items with service
+  `meetko plugin secret`, through Security.framework's SecItem API. Saving deletes the old item and adds a new one, so
+  the item carries the access list of the meetko binary that saved it. Never in the data dir, never in `config.toml`,
+  never in a log. Other systems have no store yet: saving fails with a clear error, and runs get nothing. A value
+  travels once, from the input (app) or stdin (CLI, `meetko plugin secret set <id> <NAME>`, no echo on a terminal and
+  refused if echo cannot be turned off; never a command-line argument) to the keychain. No command returns a secret:
+  the app only learns 설정됨 / 없음. A setting's value is shown.
+- **Keyed by plugin id + origin + name.** The origin is `local` for a folder install, else the recorded repo
+  (`github:owner/repo`, lowercase). A plugin with the same id from another origin (installed with `--replace` or the
+  app's second confirmation) finds nothing: the replacement starts empty, and the old origin's values are deleted
+  after the install (best effort; they were unreachable already). A new commit of the same repo is an update and keeps
+  its values; so does re-adding a local folder over a local folder (same origin: you are installing your own code), and
+  the consent dialog says so.
+- **Given per run, over stdin.** Before a run the core reads only the names the installed manifest declares, for that
+  plugin and origin, and sends the ones that are set in the `initialize` request on the plugin's stdin:
+  `{"contract": ["0.1"], "time_budget_ms": 60000, "secrets": {...}, "settings": {...}}` (the two maps only for a plugin
+  that declares something). Nothing goes into the plugin's environment or command line: on macOS a process's
+  environment and arguments can be read by other processes of the same user (`KERN_PROCARGS2`, see Known gaps), stdin
+  cannot. A plugin that declares nothing never touches the keychain; no plugin sees another's values. This extends the
+  `initialize` params of protocol 0.1 with optional fields (`contract/schemas` does not describe `initialize`; a
+  plugin that ignores unknown params is unaffected). `time_budget_ms` is the host's per-request time budget, so a plugin
+  can plan long work (`MEETKO_PLUGIN_TIMEOUT_SECS` raises it).
+- **Secrets redacted, settings not.** Every secret value is replaced by `***` (exact match, longest first) in the
+  plugin's output before it is validated and stored, in its error replies, and in the stderr tail that error messages
+  quote. Identifier and anchor fields (`id`, `from`, `to`, `owner`, `version_id`, ...) and object keys are left alone.
+  The stderr buffer is redacted whole before it is cut to its tail, and where the tail was cut the text up to the first
+  line break (or the length of the longest secret) is dropped, so no fragment of a key survives the cut. Secrets shorter
+  than 8 characters are refused, so redaction cannot mangle ordinary text; settings (a model name) are not redacted.
+  Every string and object key is redacted, identifiers and anchors included: output whose `plugin.id`, an anchor or an
+  owner carried a key then fails validation and nothing is stored. The output's `plugin` must also name the installed
+  manifest's id and version, so a plugin cannot store a result under another name.
+
+**What this does not protect against.** A plugin you give a key to and allow the network can:
+
+- send the meeting transcript it was given to the key's service, or to any other host (network is all-or-nothing);
+- use the key for something else (spend your quota, call other APIs), or send the key itself elsewhere, encoded so that
+  exact-match redaction does not see it;
+- keep a copy of the key: on macOS its HOME is deleted after the run and the sandbox allows no other writes, but on
+  Windows/Linux (no sandbox) a plugin runs as your user and could write the key anywhere (no secret store exists
+  there yet, so no key is given to a plugin on those systems today).
+
+So: keys are per plugin; give a plugin a key only if you trust it with the transcript and with the key, and prefer a
+key restricted to that use (a separate API key with a spending limit). On macOS the keychain may ask whether `meetko`
+may read a key that another meetko binary (the CLI vs the app, or a rebuilt app) saved; "Always Allow" applies to that
+binary only. See "Keychain prompts" below.
+
+### Keychain prompts (macOS)
+
+**What the prompt is.** A window from macOS itself (not from meetko): "meetko wants to use your confidential
+information stored in “meetko: … ANTHROPIC_API_KEY” in your keychain", asking for a password. That password is the
+Mac's login password (the one you sign in with). "Always Allow" lets that one program read that one item from then on;
+"Allow" lets it once; "Deny" refuses.
+
+**When it appears.** The login keychain lets the program that saved an item read it without asking. Any other program
+must ask, and "program" means its code identity, not its path: for an unsigned build (Rust's linker signs it ad hoc)
+that is the exact code hash. So the prompt appears when the app reads a key the CLI saved (or the other way round), and
+after every rebuild of a dev build. Saving the key in the app ("API 키 넣기") avoids it for that app; the dialog and
+`meetko plugin secret set` say so.
+
+**What happens on Deny** (or Cancel, or when no window can be shown, e.g. a locked keychain over ssh). The keychain
+answers `errSecAuthFailed` (-25293), `errSecUserCanceled` (-128) or `errSecInteractionNotAllowed` (-25308); deleting an
+item another program owns answers `errSecInvalidOwnerEdit` (-25244). All four become `secret_access_denied` (core:
+`Error::SecretAccessDenied`), and so does a read that finds the item but gets no value back. The run stops before the
+plugin starts: a plugin never runs without a key the user saved. The app says in plain Korean what the window was and
+what to do (run again, enter the login password, "항상 허용"); the CLI prints the same in English. In the key dialog, a
+save or removal refused this way says to allow it, or to remove the key with the program that saved it
+(`meetko plugin secret clear <id> <NAME>`, or Keychain Access, service `meetko plugin secret`) and save it again. A
+setting the program may not read is listed as set, without its value. Nothing is retried in a loop: each run asks at
+most once per value.
+
+**Options considered for reading one item from both the CLI and the app without a prompt** (tested 2026-11-10 on
+macOS 26 with two ad-hoc signed test binaries and a throwaway item under a test service, user interaction turned off so
+no window appeared):
+
+- *An access list that trusts both binaries* (`SecAccessCreate` + `SecTrustedApplicationCreateFromPath`, deprecated
+  but still working on the login keychain). The item was created with both binaries in its trusted list, yet the second
+  binary's read still failed (-25293): since macOS 10.12 an item also carries a partition list bound to the creator's
+  signature, which only the user (with the keychain password) can extend. It would also need the other binary's path
+  at save time, and the trust is by code hash, so it ends at the next rebuild. Not adopted.
+- *The app re-saving a value after a user-approved read*, to become its owner. The creator's own item is unreadable
+  for its rebuilt binary (-25293) and cannot be deleted by it (-25244), and an identical copy of the binary at another
+  path reads it fine: ownership follows the code hash. Re-saving would move the prompt to the CLI, and to every dev
+  rebuild, and writes the keychain during a run. Not adopted.
+- *Allowing any application* (`security add-generic-password -A`): no prompts, but any process of the user could read
+  every key, which is what keeping keys out of the environment is meant to prevent. Not adopted.
+- *The data-protection keychain with a shared access group* (`kSecUseDataProtectionKeychain` +
+  `keychain-access-groups`): no prompts and no partition lists, but both binaries must be signed by the same team with
+  that entitlement (a provisioning profile for the app). Not possible for unsigned dev builds; the release plan below.
+
+So meetko 0.1 keeps one item per value, owned by whichever meetko program saved it, makes the prompt and its denial
+understandable, and recommends saving keys in the app.
+
+**Release signing plan.** Sign the app and the CLI with one Developer ID team, the CLI shipped inside the app bundle
+(`meetko.app/Contents/MacOS/`) so both carry the same `keychain-access-groups` entitlement (`<TEAMID>.app.meetko`) and
+the app's provisioning profile covers it. Store items in the data-protection keychain under that group: neither binary
+prompts, and updates keep access because the identity is the team and bundle id, not a code hash. Existing
+login-keychain items would be read once (one prompt at most) and moved, a store migration to be decided then; until
+the data-protection store exists, a signed release still benefits on the login keychain, since a Developer ID
+signature's designated requirement survives updates (no prompt after each update, unlike dev builds).
+
 ## Text shown to people
 
 Manifest fields, gallery rows and the CLI's error messages are text from a remote author. Fields that are shown (id,

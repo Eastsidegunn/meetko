@@ -1,0 +1,19 @@
+# The batch transcription model this engine loads (role "asr.batch"; the core looks for this role in
+# MEETKO_BATCH_MODEL, else in the app's models/ folder). Same rules as ../nemotron-stream/models.toml:
+# pinned per file, the key is the file name inside the model directory, and the core copies the files
+# into a private directory while hashing them before the engine sees them.
+#
+# Both files are the GGUF conversions that CrispASR's author publishes (Hugging Face cstr/*, made with
+# CrispASR's converter from Qwen's safetensors): Qwen publishes no GGUF itself.
+# - qwen3-asr-1.7b-q8_0.gguf: cstr/qwen3-asr-1.7b-GGUF at 674df5d44b50a63e7102a18895ed20e3f91de301,
+#   from Qwen/Qwen3-ASR-1.7B, Apache-2.0
+# - qwen3-forced-aligner-0.6b-q8_0.gguf: cstr/qwen3-forced-aligner-0.6b-GGUF at
+#   1ec5110602ccab18c878ddebedab0891e290a95c, from Qwen/Qwen3-ForcedAligner-0.6B, Apache-2.0
+
+[[model]]
+id = "qwen3-asr-1.7b-crispasr-q8_0"
+role = "asr.batch"
+
+[model.files]
+"qwen3-asr-1.7b-q8_0.gguf" = "9851ab996591a2d0cb0efb216002764b509c86bd40c95e613d7b65b8e69c8a6e"
+"qwen3-forced-aligner-0.6b-q8_0.gguf" = "539df5dd0fe1721e378ac13bfac9a26b1260dafb62d892c518c1f21244762636"
